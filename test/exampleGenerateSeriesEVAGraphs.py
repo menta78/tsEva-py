@@ -13,19 +13,19 @@ from tsEva import tsEvaPlotGEVImageScFromAnalysisObj
 from tsEva import tsEvaPlotGPDImageScFromAnalysisObj
 from tsEva import tsEvaPlotReturnLevelsGEVFromAnalysisObj
 from tsEva import tsEvaPlotReturnLevelsGPDFromAnalysisObj
+from tsEva import tsEvaPandasDate2DateNum
 from tsEva import tsEvaPlotTransfToStatFromAnalysisObj
 from tsEva import tsEvaPlotGEV3DFromAnalysisObj
-
-def datetime_to_datenum(dt):
-    ord_num = dt.toordinal()
-    frac_day = (dt - datetime(dt.year, dt.month, dt.day)).total_seconds() / 86400
-    return ord_num + frac_day + 366
+from tsEva import datetime_to_datenum
 
 # Load data
 current_working_directory = os.getcwd()
 data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
-data = pd.read_csv(data_file_name, header=None)
-timeAndSeries = data.values
+data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
+# Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
+dates = pd.to_datetime(data[['year','month','day','hour']])
+timestamps = tsEvaPandasDate2DateNum(dates)
+timeAndSeries = np.column_stack([timestamps, data['value'].values])
 extremesRange = [0.2, 1.2]
 seasonalExtrRange = [0.1, 1.1]
 seriesDescr = 'Hebrides'

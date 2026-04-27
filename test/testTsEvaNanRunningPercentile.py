@@ -9,14 +9,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tsEva import tsEvaNanRunningPercentile
 from tsEva import tsEvaRunningMeanTrend
 from tsEva import datenum_to_datetime
+from tsEva import tsEvaPandasDate2DateNum
 
 # this script tests the function for computing of the running percentile
 
 # Load data
 current_working_directory = os.getcwd()
 data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
-data = pd.read_csv(data_file_name, header=None)
-timeAndSeries = data.values
+data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
+# Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
+dates = pd.to_datetime(data[['year','month','day','hour']])
+timestamps = tsEvaPandasDate2DateNum(dates)
+timeAndSeries = np.column_stack([timestamps, data['value'].values])
 seriesDescr = 'Hebrides'
 
 timeWindow = 365.25 * 6  # 6 years

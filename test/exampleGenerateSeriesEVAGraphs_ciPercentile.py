@@ -7,6 +7,7 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tsEva import tsEvaComputeReturnLevelsGEVFromAnalysisObj
+from tsEva import tsEvaPandasDate2DateNum
 from tsEva import tsEvaComputeReturnLevelsGPDFromAnalysisObj
 from tsEva import tsEvaNonStationary
 from tsEva import tsEvaPlotSeriesTrendStdDevFromAnalysisObj
@@ -29,8 +30,11 @@ from tsEva import datetime_to_datenum
 # Load data
 current_working_directory = os.getcwd()
 data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
-data = pd.read_csv(data_file_name, header=None)
-timeAndSeries = data.values
+data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
+# Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
+dates = pd.to_datetime(data[['year','month','day','hour']])
+timestamps = tsEvaPandasDate2DateNum(dates)
+timeAndSeries = np.column_stack([timestamps, data['value'].values])
 extremesRange = [0.2, 1.2]
 rlRange = [0.6, 1.1]
 seasonalExtrRange = [0.1, 1.1]
