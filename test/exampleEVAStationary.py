@@ -11,6 +11,8 @@ from tsEva import tsEvaComputeReturnLevelsGEVFromAnalysisObj
 from tsEva import tsEvaComputeReturnLevelsGPDFromAnalysisObj
 from tsEva import tsEvaPlotReturnLevelsGEVFromAnalysisObj
 from tsEva import tsEvaPlotReturnLevelsGPDFromAnalysisObj
+from tsEva import tsPlotSeriesYearMaxGEVRetLevStationary
+from tsEva import tsPlotSeriesPotGPDRetLevStationary
 
 # Load the dataset (assuming it's a CSV file, adjust as needed)
 # Assuming 'timeAndSeriesHebrides.mat' is a CSV file
@@ -42,6 +44,12 @@ plt.title('GEV')
 plt.savefig('GEV_ReturnLevels_STATIONARY.png')
 plt.show()
 
+# Plotting the series with GEV return levels
+hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('GEV')
+hndl['fig'].savefig('GEV_SeriesReturnLevels_STATIONARY.png')
+plt.show()
+
 # For GPD fitting, we use the generalized Pareto distribution
 
 rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(statEvaParams, return_periods)
@@ -52,6 +60,12 @@ print("rlevGPDErr=", rlevGPDErr)
 hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
 plt.title('GPD')
 plt.savefig('GPD_ReturnLevels_STATIONARY.png')
+plt.show()
+
+# Plotting the series with GPD return levels
+hndl = tsPlotSeriesPotGPDRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('GPD')
+hndl['fig'].savefig('GPD_SeriesReturnLevels_STATIONARY.png')
 plt.show()
 
 print("Same as before, but the POT is done with a fixed threshold")
@@ -77,6 +91,12 @@ print("rlevGEVErr=", rlevGEVErr)
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(statEvaParams, 0, ylim=[.5,1.5])
 plt.title('Gumbel')
 plt.savefig('Gumbel_ReturnLevels_STATIONARY.png')
+plt.show()
+
+# Plotting the series with Gumbel return levels
+hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('Gumbel')
+hndl['fig'].savefig('Gumbel_SeriesReturnLevels_STATIONARY.png')
 plt.show()
 
 
