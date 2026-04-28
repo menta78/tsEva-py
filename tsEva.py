@@ -846,10 +846,7 @@ def tsGetPOT(ms, pcts, desiredEventsPerYear, **kwargs):
      
     nyears = round((np.max(ms[:, 0]) - np.min(ms[:, 0])) / 365.25)
         
-    if len(pcts) == 1:
-        pcts = [pcts - 3, pcts]
-        desiredEventsPerYear = -1
-    
+        
     numperyear = np.empty(len(pcts))
     minnumperyear = np.empty(len(pcts))
     thrsdts = np.empty(len(pcts))
@@ -873,10 +870,6 @@ def tsGetPOT(ms, pcts, desiredEventsPerYear, **kwargs):
             pks = ms[locs, 1]
         else:
             locs,pks = find_peaks(ms[:, 1], height=thrsdt, distance=minPeakDistance)
-            
-#        if tail == "low":
-#            shape_bnd = [-1.5, 0]
-#            locs,pks = declustpeaks(data = ms[:, 1] ,minpeakdistance = minPeakDistance ,minrundistance = minRunDistance, qt=thrsdt)
 
         peaks=pks['peak_heights']
 
@@ -887,13 +880,14 @@ def tsGetPOT(ms, pcts, desiredEventsPerYear, **kwargs):
 
         if ipp>0 and numperyear[ipp] < minEventsPerYear and minnumperyear[ipp]<minEventsPerYear:
             break
-        
-    diffNPerYear = np.mean(np.diff(np.nan_to_num(numperyear[::-1])))
-    
+
+    diffs_npy = np.diff(np.nan_to_num(numperyear[::-1]))
+    diffNPerYear = np.mean(diffs_npy) if len(diffs_npy) > 0 else 1
     if diffNPerYear == 0:
         diffNPerYear = 1
-    
-    thresholdError = np.mean(np.diff(np.nan_to_num(thrsdts))) / diffNPerYear / 2
+
+    diffs_thr = np.diff(np.nan_to_num(thrsdts))
+    thresholdError = (np.mean(diffs_thr) / diffNPerYear / 2) if len(diffs_thr) > 0 else 0
     indexp = ipp
 
     if indexp is not None:

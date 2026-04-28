@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import genextreme, genpareto
 import pandas as pd
 import os
 import sys
@@ -27,6 +26,7 @@ timeAndSeries = np.column_stack([timestamps, data['value'].values])
 minPeakDistanceInDays = 3
 
 return_periods = [10, 20, 50, 100]
+potPercentiles = [99] # testing just 1 percentile
 
 
 
@@ -34,10 +34,11 @@ return_periods = [10, 20, 50, 100]
 print('Stationary fit of extreme value distributions (GEV, GPD) to a time series')
 
 # Stationary fitting (Here, you would fit the GEV and GPD distributions)
-# For GEV, we use the generalized extreme value distribution from scipy
+statEvaParams = tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays,
+                                potPercentiles=potPercentiles)
 
-statEvaParams = tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays)
 
+# Compute return levels for GEV
 rlevGEV,rlevGEVErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(statEvaParams, return_periods)
 print("rlevGEV=", rlevGEV)
 print("rlevGEVErr=", rlevGEVErr)
@@ -55,7 +56,6 @@ hndl['fig'].savefig('GEV_SeriesReturnLevels_STATIONARY.png')
 plt.show()
 
 # For GPD fitting, we use the generalized Pareto distribution
-
 rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(statEvaParams, return_periods)
 print("rlevGPD=", rlevGPD)
 print("rlevGPDErr=", rlevGPDErr)
