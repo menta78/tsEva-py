@@ -22,7 +22,7 @@ from tsEva import tsEvaPlotTransfToStatFromAnalysisObj
  
 # Load data
 current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeries_waves_015_220E_055_509N.csv"
+data_file_name= current_working_directory+"/data/timeAndSeries_waves_015_220E_055_509N.csv"
 #data_file_name= current_working_directory+"/test/data/timeAndSeries_waves_023_688E_059_519N.csv"
 data = pd.read_csv(data_file_name, header=None)
 timeAndSeries = data.values

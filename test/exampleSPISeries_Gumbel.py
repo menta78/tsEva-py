@@ -16,7 +16,7 @@ from tsEva import tsEvaPlotSeriesTrendStdDevFromAnalysisObj
 
 # Load data
 current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeries_SPI_179_750E_-16.750N.csv"
+data_file_name= current_working_directory+"/data/timeAndSeries_SPI_179_750E_-16.750N.csv"
 data = pd.read_csv(data_file_name, header=None)
 timeAndSeries = data.values
 seriesDescr = 'SPI_179_750E_-16.750N'

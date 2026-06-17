@@ -11,7 +11,7 @@ Python port of exampleGenerateSeriesEVAGraphs_trendLinear.m
 import numpy as np
 import scipy.io
 import matplotlib
-matplotlib.use('Agg')  # non-interactive backend for testing
+#matplotlib.use('Agg')  # non-interactive backend for testing
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os

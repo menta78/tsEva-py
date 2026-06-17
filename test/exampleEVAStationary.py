@@ -18,7 +18,7 @@ from tsEva import tsEvaPandasDate2DateNum
 # Load the dataset (assuming it's a CSV file, adjust as needed)
 # Assuming 'timeAndSeriesHebrides.mat' is a CSV file
 current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
+data_file_name= current_working_directory+"/data/timeAndSeriesHebrides.csv"
 data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
 
 # Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour

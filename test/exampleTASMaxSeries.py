@@ -18,7 +18,7 @@ from tsEva import tsEvaPlotReturnLevelsGEVFromAnalysisObj
 
 # Load data
 current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesTASMax.csv"
+data_file_name= current_working_directory+"/data/timeAndSeriesTASMax.csv"
 data = pd.read_csv(data_file_name, header=None)
 timeAndSeries = data.values
 seriesDescr = 'TASMax'
