@@ -6,6 +6,8 @@ from scipy.io import loadmat
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tsEvaMultivariate as tsm
 np.random.seed(42)
 
@@ -13,7 +15,8 @@ np.random.seed(42)
 # Data Loading and Preparation
 # =============================================================================
 # Load MATLAB .mat file (Assuming variables are 1D arrays)
-data = loadmat('caseStudy01_data.mat')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data = loadmat(os.path.join(script_dir, "data", "caseStudy01_data.mat"))
 timeSWH = data['timeSWH'].flatten()
 timeRiverDisch = data['timeRiverDisch'].flatten()
 riverineDischarge = data['riverineDischarge'].flatten()

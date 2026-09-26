@@ -5,6 +5,8 @@ from scipy.io import loadmat
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tsEvaMultivariate as tsm
 np.random.seed(42)
 
@@ -14,7 +16,8 @@ np.random.seed(42)
 # Load MATLAB .mat file
 # timeAndSeries1: col0=time, col1=temperature
 # timeAndSeries2: col0=time, col1=SPEI
-data = loadmat('caseStudy03_data.mat')
+script_dir = os.path.dirname(os.path.abspath(__file__))
+data = loadmat(os.path.join(script_dir, "data", "caseStudy03_data.mat"))
 timeAndSeries1 = data['timeAndSeries1']
 timeAndSeries2 = data['timeAndSeries2']
 
