@@ -1,0 +1,7 @@
+when asked to analyze a netcdf, inspect it first (xarray.open_dataset or netCDF4). If reading the time variable, check that units attribute is present in the file. Mind the calendar attribute as well — some projection data use fancy calendars such as no-leap or 360-day, which can create confusion when converting to pandas datetime. Once you know all the attributes, provide the right command to read and convert the time axis (e.g., cftime.num2date with the correct calendar).
+
+In coastal engineering usually runup = setup + swash component, while Total Water Level twl = water level + runup.
+
+Treatment of tides in coastal hazard. Tides are an extremely regular and predictable phenomenon. So in general it makes no sense doing an EVA on tides alone. If a user asks about tides, leave them the choice among:
+a) not include them in the EVA;
+b) add tides, sea level anomalies, storm surges, and compute the EVA of the resulting signal.

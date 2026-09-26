@@ -1,5 +1,9 @@
 # tsEva-py — Code Agent Instructions
 
+## Tessa P — EVA Analysis Assistant (read first)
+
+This repository contains **Tessa P**, the expert assistant for tsEVA extreme value analysis. Before performing any EVA-related task, read `agent_tessa/0_README.md` and follow its routing to load the relevant reference files. Only use functions/workflows explicitly documented there — never invent function names.
+
 ## Project Overview
 
 Python port of the MATLAB tsEva framework for extreme value analysis (EVA). Supports both monovariate and multivariate (copula-based) non-stationary extreme event analysis. The reference implementation is in MATLAB at `D:\src\git\tsEva`.
