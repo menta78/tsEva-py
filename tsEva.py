@@ -23,6 +23,20 @@ def datetime_to_datenum(dt):
     return ord_num + frac_day + 366
 
 
+def datenum_to_datetime(datenum):
+    """Convert a tsEva datenum (MATLAB serial days) back to a Python datetime.
+
+    Dual of datetime_to_datenum: strips the 366 offset, splits integer and
+    fractional parts, reconstructs hours/minutes/seconds from the fraction.
+    """
+    val = float(datenum) - 366
+    day_ord = int(np.floor(val))
+    frac_day = val - day_ord
+    base_dt = datetime.fromordinal(day_ord)
+    total_seconds = round(frac_day * 86400)
+    return base_dt + timedelta(seconds=total_seconds)
+
+
 def tsEvaPandasDate2DateNum(dates):
     """Convert a pandas DatetimeIndex or datetime Series to tsEva datenum (MATLAB serial days)."""
     dates = pd.DatetimeIndex(dates)
