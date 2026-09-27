@@ -159,17 +159,21 @@ for lx, timeIndex in enumerate([999, len(timeStamps) - 1000]):
     print(f'  computing return levels for {tmstmpref.strftime("%b-%Y")}')
 
     rlevGEV, rlevGEVErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(
-        nonStatEvaParams, return_periods, timeIndex=timeIndex)
+        nonStatEvaParams, return_periods, timeIndex=timeStamps[timeIndex],
+        statsTimeStamps=getattr(statTransfData, 'statsTimeStamps', None))
     hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(
-        nonStatEvaParams, timeIndex, ylim=rlRange, maxReturnPeriodYears=200)
+        nonStatEvaParams, timeStamps[timeIndex], ylim=rlRange, maxReturnPeriodYears=200,
+        statsTimeStamps=getattr(statTransfData, 'statsTimeStamps', None))
     plt.title(f'GEV return levels — {tmstmpref.strftime("%b-%Y")}', fontsize=titleFontSize)
     plt.savefig(f'GEV_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
     plt.show()
 
     rlevGPD, rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(
-        nonStatEvaParams, return_periods, timeIndex=timeIndex)
+        nonStatEvaParams, return_periods, timeIndex=timeStamps[timeIndex],
+        statsTimeStamps=getattr(statTransfData, 'statsTimeStamps', None))
     hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(
-        nonStatEvaParams, timeIndex, ylim=rlRange, maxReturnPeriodYears=200)
+        nonStatEvaParams, timeStamps[timeIndex], ylim=rlRange, maxReturnPeriodYears=200,
+        statsTimeStamps=getattr(statTransfData, 'statsTimeStamps', None))
     plt.title(ttl, fontsize=titleFontSize)
     plt.savefig(f'GPD_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
     plt.show()

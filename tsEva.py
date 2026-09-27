@@ -644,15 +644,20 @@ def tsEvaComputeReturnLevelsGEV(epsilon,sigma,mu,epsilonStdErr,sigmaStdErr,muStd
 def tsEvaComputeReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, returnPeriodsInYears, **kwargs):
 
     timeIndex = kwargs.get('timeIndex',-1)
+    # Map full-resolution timestamp to stats-grid index if needed (monthly grid after _reduce_output_objs)
+    statsTs = kwargs.get('statsTimeStamps', None)
+    if statsTs is not None and timeIndex > 0:
+        timeIndex = _stats_grid_index(statsTs, timeIndex)
+
     epsilon = nonStationaryEvaParams[0]['parameters']['epsilon']
     epsilonStdErr = nonStationaryEvaParams[0]['paramErr']['epsilonErr']
     epsilonStdErrFit = epsilonStdErr
     epsilonStdErrTransf = 0
     nonStationary = 'sigmaErrTransf' in nonStationaryEvaParams[0]['paramErr']
-    
+
     if timeIndex > 0:
-        sigma = nonStationaryEvaParams[0]['parameters']['sigma']
-        mu = nonStationaryEvaParams[0]['parameters']['mu']
+        sigma = nonStationaryEvaParams[0]['parameters']['sigma'][timeIndex] if isinstance(nonStationaryEvaParams[0]['parameters']['sigma'], np.ndarray) else nonStationaryEvaParams[0]['parameters']['sigma']
+        mu = nonStationaryEvaParams[0]['parameters']['mu'][timeIndex] if isinstance(nonStationaryEvaParams[0]['parameters']['mu'], np.ndarray) else nonStationaryEvaParams[0]['parameters']['mu']
         sigmaStdErr = nonStationaryEvaParams[0]['paramErr']['sigmaErr']
         if 'sigmaErrFit' in nonStationaryEvaParams: sigmaStdErrFit = nonStationaryEvaParams[0]['paramErr']['sigmaErrFit']
         if 'sigmaErrTransf' in nonStationaryEvaParams: sigmaStdErrTransf = nonStationaryEvaParams[0]['paramErr']['sigmaErrTransf']
@@ -725,6 +730,11 @@ def tsEvaComputeReturnLevelsGPD(epsilon, sigma, threshold, epsilonStdErr, sigmaS
 def tsEvaComputeReturnLevelsGPDFromAnalysisObj(nonStationaryEvaParams, returnPeriodsInYears, **kwargs):
 
     timeIndex = kwargs.get('timeIndex',-1)
+    # Map full-resolution timestamp to stats-grid index if needed (monthly grid after _reduce_output_objs)
+    statsTs = kwargs.get('statsTimeStamps', None)
+    if statsTs is not None and timeIndex > 0:
+        timeIndex = _stats_grid_index(statsTs, timeIndex)
+
     epsilon = nonStationaryEvaParams[1]['parameters']['epsilon']
     epsilonStdErr = nonStationaryEvaParams[1]['paramErr']['epsilonErr']
     epsilonStdErrFit = epsilonStdErr
@@ -735,12 +745,12 @@ def tsEvaComputeReturnLevelsGPDFromAnalysisObj(nonStationaryEvaParams, returnPer
     nPeaks = nonStationaryEvaParams[1]['parameters']['nPeaks']
     nonStationary = "sigmaErrTransf" in nonStationaryEvaParams[1]['paramErr']
     if timeIndex > 0:
-        sigma = nonStationaryEvaParams[1]['parameters']['sigma']
-        threshold = nonStationaryEvaParams[1]['parameters']['threshold']
-        sigmaStdErr = nonStationaryEvaParams[1]['paramErr']['sigmaErr']
+        sigma = nonStationaryEvaParams[1]['parameters']['sigma'][timeIndex] if isinstance(nonStationaryEvaParams[1]['parameters']['sigma'], np.ndarray) else nonStationaryEvaParams[1]['parameters']['sigma']
+        threshold = nonStationaryEvaParams[1]['parameters']['threshold'][timeIndex] if isinstance(nonStationaryEvaParams[1]['parameters']['threshold'], np.ndarray) else nonStationaryEvaParams[1]['parameters']['threshold']
+        sigmaStdErr = nonStationaryEvaParams[1]['paramErr']['sigmaErr'][timeIndex] if isinstance(nonStationaryEvaParams[1]['paramErr']['sigmaErr'], np.ndarray) else nonStationaryEvaParams[1]['paramErr']['sigmaErr']
         if 'sigmaErrFit' in nonStationaryEvaParams: sigmaStdErrFit = nonStationaryEvaParams[1]['paramErr']['sigmaErrFit']
         if 'sigmaErrTransf' in nonStationaryEvaParams: sigmaStdErrTransf = nonStationaryEvaParams[1]['paramErr']['sigmaErrTransf']
-        thresholdStdErr = nonStationaryEvaParams[1]['paramErr']['thresholdErr']
+        thresholdStdErr = nonStationaryEvaParams[1]['paramErr']['thresholdErr'][timeIndex] if isinstance(nonStationaryEvaParams[1]['paramErr']['thresholdErr'], np.ndarray) else nonStationaryEvaParams[1]['paramErr']['thresholdErr']
         thresholdStdErrFit = 0
         if 'thresholdErrTransf' in nonStationaryEvaParams: thresholdStdErrTransf = nonStationaryEvaParams[1]['paramErr']['thresholdErrTransf']
     else:
@@ -1420,6 +1430,80 @@ def tsEvaTransformSeriesToStationaryMultiplicativeSeasonality(timeStamps, series
     
     return trasfData
 
+
+def _reduce_output_objs(nonStationaryEvaParams, trasfData, newTimeStamps=None):
+    """Reduce both analysis objects for storage (follows MATLAB tsEvaReduceOutputObjSize convention).
+
+    Subsamples all time-varying arrays on a coarser grid — default: first day of each month.
+    Keeps both time series intact (stationarySeries, nonStatSeries) — they are data, not working artifacts.
+    Reduces nonStationaryEvaParams parameters and errors on the same indices.
+
+    Parameters
+    ----------
+    nonStationaryEvaParams : list of dicts [gevObj, potObj]
+    trasfData : object with attributes (timeStamps, trendSeries, stdDevSeries, etc.)
+    newTimeStamps : array-like or None
+        Target timestamps for subsampling. If None, uses first day of each month in range.
+
+    Returns
+    -------
+    nonStationaryEvaParams, trasfData : both reduced on the same grid
+    """
+    origTs = np.asarray(trasfData.timeStamps)
+
+    if newTimeStamps is None:
+        # Default: first day of each month in the series range (datenum convention: ordinal + 366)
+        start_dt = pd.Timestamp.fromordinal(int(origTs[0]) - 366)
+        end_dt = pd.Timestamp.fromordinal(int(origTs[-1]) - 366)
+        monthly_grid = pd.date_range(start=start_dt, end=end_dt, freq='MS')
+        newTimeStamps = np.array([ts.to_pydatetime().toordinal() + 366 for ts in monthly_grid])
+
+    newTimeStamps = np.asarray(newTimeStamps)
+
+    # Compute tsIndxs ONCE — nearest original index for each target timestamp
+    tsIndxs = np.searchsorted(origTs, newTimeStamps)
+    tsIndxs = np.clip(tsIndxs, 0, len(origTs) - 1)
+    for i in range(len(newTimeStamps)):
+        if tsIndxs[i] > 0 and abs(origTs[tsIndxs[i]] - newTimeStamps[i]) > abs(origTs[tsIndxs[i]-1] - newTimeStamps[i]):
+            tsIndxs[i] -= 1
+
+    # --- Reduce stationaryTransformData (keep both series intact — MATLAB lines 12-13 commented out) ---
+    for attr in ['trendSeries', 'trendSeriesNonSeasonal', 'stdDevSeries',
+                 'stdDevSeriesNonSeasonal', 'statSer3Mom', 'statSer4Mom', 'stdDevError']:
+        if hasattr(trasfData, attr):
+            arr = np.asarray(getattr(trasfData, attr))
+            if len(arr) == len(origTs):
+                setattr(trasfData, attr, arr[tsIndxs])
+
+    # Store reduced grid as statsTimeStamps (MATLAB convention: timeStamps stays full resolution)
+    trasfData.statsTimeStamps = newTimeStamps
+
+    # --- Reduce nonStationaryEvaParams on the same indices ---
+    def _reduce_entry(entry, param_keys, err_keys):
+        if entry is None or entry.get('parameters') is None:
+            return
+        p = entry['parameters']
+        for key in param_keys:
+            if key in p and isinstance(p[key], (list, np.ndarray)):
+                arr = np.asarray(p[key])
+                if len(arr) == len(origTs):  # only reduce if aligned with original timestamps
+                    p[key] = arr[tsIndxs]
+        pe = entry.get('paramErr', {})
+        for key in err_keys:
+            if key in pe and isinstance(pe[key], (list, np.ndarray)):
+                arr = np.asarray(pe[key])
+                if len(arr) == len(origTs):
+                    pe[key] = arr[tsIndxs]
+
+    _reduce_entry(nonStationaryEvaParams[0], ['sigma', 'mu'],
+                  ['sigmaErrFit', 'sigmaErrTransf', 'sigmaErr', 'muErrFit', 'muErrTransf', 'muErr'])
+    if len(nonStationaryEvaParams) > 1:
+        _reduce_entry(nonStationaryEvaParams[1], ['sigma', 'threshold'],
+                      ['sigmaErrFit', 'sigmaErrTransf', 'sigmaErr', 'thresholdErrFit', 'thresholdErrTransf', 'thresholdErr'])
+
+    return nonStationaryEvaParams, trasfData
+
+
 def tsEvaNonStationary(timeAndSeries, timeWindow, **kwargs):
     """
     Performs the TS-EVA non-stationary extreme value analysis (Mentaschi et al. 2016).
@@ -1679,10 +1763,12 @@ def tsEvaNonStationary(timeAndSeries, timeWindow, **kwargs):
             'objs': {'peakIndexes': None}
         }
         
-    # Final output
+    # Final output — reduce both objects on coarser time grid (MATLAB tsEvaReduceOutputObjSize convention)
     del nonStationaryEvaParams
     nonStationaryEvaParams = [gevObj, potObj]
-    stationaryTransformData = trasfData
+
+    nonStationaryEvaParams, stationaryTransformData = _reduce_output_objs(nonStationaryEvaParams, trasfData)
+
     is_valid = True
     
     return nonStationaryEvaParams, stationaryTransformData, is_valid
@@ -2561,18 +2647,38 @@ def tsEvaPlotTransfToStat(timeStamps, statSeries, srsmean, stdDev, thirdMom, fou
     dateformat=kwargs.get('dateformat','%Y')
     legendLocation=kwargs.get('legendLocation','upper right')
     ylim=kwargs.get('ylim',None)
+    statsTimeStamps = kwargs.get('statsTimeStamps', None)
 
     min_date=datetime(minyear, 1, 1)
     max_date=datetime(maxyear, 1, 1)
     minTS=min_date.toordinal()
     maxTS=max_date.toordinal()
 
+    # Full-resolution series (always on timeStamps grid)
     filtered_statSeries = statSeries[(timeStamps >= minTS) & (timeStamps <= maxTS)]
     filtered_srsmean = srsmean[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_stdDev = stdDev[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_thirdMom = thirdMom[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_fourthMom = fourthMom[(timeStamps >= minTS) & (timeStamps <= maxTS)]
     filtered_timeStamps = timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)]
+
+    # Slow-varying stats — on their own grid if provided, else same as timeStamps.
+    # Arrays may be at full resolution (placeholders) or reduced to stats grid.
+    statsTs = np.asarray(statsTimeStamps) if statsTimeStamps is not None else np.asarray(timeStamps)
+    statsMask = (statsTs >= minTS) & (statsTs <= maxTS)
+    filtered_statsTS = statsTs[statsMask]
+
+    def _align_to_grid(arr, grid_ts):
+        """Return arr aligned to grid_ts: filter if same length, interpolate if full-res."""
+        arr = np.asarray(arr)
+        if len(arr) == len(grid_ts):
+            return arr[(grid_ts >= minTS) & (grid_ts <= maxTS)]
+        else:
+            # Full-resolution array — interpolate onto the stats grid within range
+            ts_full = np.asarray(timeStamps)
+            mask_full = (ts_full >= minTS) & (ts_full <= maxTS)
+            return np.interp(grid_ts[statsMask], ts_full[mask_full], arr[mask_full])
+
+    filtered_stdDev = _align_to_grid(stdDev, statsTs)
+    filtered_thirdMom = _align_to_grid(thirdMom, statsTs)
+    filtered_fourthMom = _align_to_grid(fourthMom, statsTs)
 
     minTS = min(filtered_timeStamps);
     maxTS = max(filtered_timeStamps);
@@ -2583,9 +2689,9 @@ def tsEvaPlotTransfToStat(timeStamps, statSeries, srsmean, stdDev, thirdMom, fou
 
     ax.plot(filtered_timeStamps, filtered_statSeries, label='Normalized series', zorder=1)
     ax.plot(filtered_timeStamps, filtered_srsmean, "--", color="k", linewidth=3, label='Mean', zorder=2)
-    ax.plot(filtered_timeStamps, filtered_stdDev, "--", color=[0.5, 0, 0], linewidth=3, label='Std. dev.', zorder=2)
-    ax.plot(filtered_timeStamps, filtered_thirdMom, color=[0, 0, 0.5], linewidth=3,label='Skewness', zorder=2)
-    ax.plot(filtered_timeStamps, filtered_fourthMom, color=[0, 0.4, 0], linewidth=3,label='Kurtosis',zorder=2)
+    ax.plot(filtered_statsTS, filtered_stdDev, "--", color=[0.5, 0, 0], linewidth=3, label='Std. dev.', zorder=2)
+    ax.plot(filtered_statsTS, filtered_thirdMom, color=[0, 0, 0.5], linewidth=3,label='Skewness', zorder=2)
+    ax.plot(filtered_statsTS, filtered_fourthMom, color=[0, 0.4, 0], linewidth=3,label='Kurtosis',zorder=2)
     ax.xaxis.set_major_formatter(mdates.DateFormatter(dateformat))
     
     ax.legend([ax.lines[0], ax.lines[1], ax.lines[2], ax.lines[3], ax.lines[4]], ['Normalized series', 'Mean', 'Std dev', 'Skewness', 'Kurtosis'],
@@ -2610,7 +2716,6 @@ def tsEvaPlotTransfToStat(timeStamps, statSeries, srsmean, stdDev, thirdMom, fou
         y_margin = 0.1 * (data_max - data_min)
         ax.set_ylim([data_min - y_margin, data_max + y_margin])
 
-
     phandles = {
         'fig': fig,
         'ax': ax,
@@ -2629,7 +2734,10 @@ def tsEvaPlotTransfToStatFromAnalysisObj(nonStationaryEvaParams, stationaryTrans
     srstddev = np.ones_like(series)
     st3mom = stationaryTransformData.statSer3Mom
     st4mom = stationaryTransformData.statSer4Mom
-    
+
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        kwargs['statsTimeStamps'] = stationaryTransformData.statsTimeStamps
+
     minyear = kwargs.get('minyear',1)
     maxyear = kwargs.get('maxyear',9999)
     dateFormat = kwargs.get('dateformat','%Y')
@@ -2640,12 +2748,10 @@ def tsEvaPlotTransfToStatFromAnalysisObj(nonStationaryEvaParams, stationaryTrans
 
 def tsEvaPlotGEVImageSc(Y, timeStamps, epsilon, sigma, mu, **kwargs):
     avgYearLength = 365.2425
-    nyears = (max(timeStamps) - min(timeStamps)) / avgYearLength
-    nelmPerYear = len(timeStamps) / nyears
 
     # Default arguments
     
-    nPlottedTimesByYear=kwargs.get('nPlottedTimesByYear',min(360, round(nelmPerYear)))
+    nPlottedTimesByYear=kwargs.get('nPlottedTimesByYear',min(360, round(len(timeStamps) / max((max(timeStamps) - min(timeStamps)) / avgYearLength, 1))))
     ylabel=kwargs.get('ylabel','levels (m)')
     zlabel=kwargs.get('zlabel','pdf')
     minYear=kwargs.get('minYear',1)
@@ -2658,16 +2764,21 @@ def tsEvaPlotGEVImageSc(Y, timeStamps, epsilon, sigma, mu, **kwargs):
     figPosition=kwargs.get('figPosition',[x + 10 for x in [0, 0, 1450, 700]])
     xtick=kwargs.get('xtick',[])
     ax=kwargs.get('ax',None)
+    statsTimeStamps = kwargs.get('statsTimeStamps', None)
 
     min_date=datetime(minYear, 1, 1)
     max_date=datetime(maxYear, 1, 1)
     minTS=min_date.toordinal()
     maxTS=max_date.toordinal()
 
-    sigma = sigma[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    mu = mu[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    timeStamps = timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)]
+    # Stats are on their own grid (monthly after _reduce_output_objs)
+    statsTs = np.asarray(statsTimeStamps) if statsTimeStamps is not None else np.asarray(timeStamps)
+    statsMask = (statsTs >= minTS) & (statsTs <= maxTS)
+    sigma = np.asarray(sigma)[statsMask]
+    mu = np.asarray(mu)[statsMask]
+    statsTs = statsTs[statsMask]
 
+    timeStamps = np.asarray(timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)])
 
     # Handle figure and axes
     if ax is None:
@@ -2676,49 +2787,24 @@ def tsEvaPlotGEVImageSc(Y, timeStamps, epsilon, sigma, mu, **kwargs):
     else:
         phandles = [ax]
 
-    # Setup time range
-    L = len(timeStamps)
+    # Setup time range from full-resolution timestamps
     minTS = timeStamps[0]
     maxTS = timeStamps[-1]
     
     npdf = int(np.ceil(((maxTS - minTS) / avgYearLength) * nPlottedTimesByYear))
-    navg = int(np.ceil(L / npdf))
+    timeStamps_plot = np.linspace(minTS, maxTS, npdf)
 
-    plotSLength = npdf * navg
-    timeStamps_plot = np.linspace(minTS, maxTS, plotSLength)
+    # Epsilon is scalar (shape parameter doesn't vary in time for our use case)
+    epsilon0 = np.ones(npdf) * float(epsilon) if not isinstance(epsilon, (list, np.ndarray)) else np.asarray(epsilon)[statsMask]
 
-    # Handle epsilon values
-    if isinstance(epsilon, (list, np.ndarray)):
-        if len(epsilon) == 1:
-            epsilon0 = np.ones(npdf) * epsilon
-    else:
-        epsilon_ = np.full(npdf * navg, np.nan)
-        epsilon_[:L] = epsilon
-        epsilonMtx = epsilon_.reshape(navg, -1)
-        epsilon0 = np.nanmean(epsilonMtx, axis=0).T
-
-    # Interpolation for sigma and mu
-    sigma_ = np.interp(timeStamps_plot, timeStamps, sigma)
-    sigmaMtx = sigma_.reshape(-1, navg)
-
-    if sigmaMtx.shape[0] > 1:
-        sigma0 = np.nanmean(sigmaMtx, axis=1)
-        sigma0 = sigma0.T
-    else:
-        sigma0 = np.transpose(sigmaMtx)
-    
-    mu_ = np.interp(timeStamps_plot, timeStamps, mu)
-    muMtx = mu_.reshape(-1, navg)
-    if muMtx.shape[0] > 1:
-        mu0 = np.nanmean(muMtx, axis=1)
-        mu0 = mu0.T  # Transpose
-    else:
-        mu0 = muMtx.T
+    # Interpolate sigma and mu from stats grid to plot grid
+    sigma_ = np.interp(timeStamps_plot, statsTs, sigma)
+    mu_ = np.interp(timeStamps_plot, statsTs, mu)
 
     # Create grid for GEV parameters
     X_mesh, epsilonMtx = np.meshgrid(Y, epsilon0)
-    _, sigmaMtx = np.meshgrid(Y, sigma0)
-    XMtx, muMtx = np.meshgrid(Y, mu0)
+    _, sigmaMtx = np.meshgrid(Y, sigma_)
+    XMtx, muMtx = np.meshgrid(Y, mu_)
     
     # Compute the GEV PDF
     gevvar = gev.pdf(XMtx, c=epsilonMtx, loc=muMtx, scale=sigmaMtx)
@@ -2755,12 +2841,10 @@ def tsEvaPlotGEVImageSc(Y, timeStamps, epsilon, sigma, mu, **kwargs):
 
 def tsEvaPlotGPDImageSc(Y, timeStamps, epsilon, sigma, threshold, **kwargs):
     avgYearLength = 365.2425
-    nyears = (max(timeStamps) - min(timeStamps)) / avgYearLength
-    nelmPerYear = len(timeStamps) / nyears
 
     # Default arguments
     
-    nPlottedTimesByYear = kwargs.get('nPlottedTimesByYear',min(360, round(nelmPerYear)))
+    nPlottedTimesByYear = kwargs.get('nPlottedTimesByYear', min(360, round(len(timeStamps) / max((max(timeStamps) - min(timeStamps)) / avgYearLength, 1))))
     ylabel = kwargs.get('ylabel','levels (m)')
     zlabel = kwargs.get('zlabel','pdf')
     minYear = kwargs.get('minYear',1)
@@ -2773,16 +2857,22 @@ def tsEvaPlotGPDImageSc(Y, timeStamps, epsilon, sigma, threshold, **kwargs):
     figPosition = kwargs.get('figPosition',[x + 10 for x in [0, 0, 1450, 700]])
     xtick = kwargs.get('xtick',[])
     ax=kwargs.get('ax',None)
+    statsTimeStamps = kwargs.get('statsTimeStamps', None)
 
     min_date=datetime(minYear, 1, 1)
     max_date=datetime(maxYear, 1, 1)
     minTS=min_date.toordinal()
     maxTS=max_date.toordinal()
 
-    sigma = sigma[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    threshold = threshold[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    timeStamps = timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    
+    # Stats are on their own grid (monthly after _reduce_output_objs)
+    statsTs = np.asarray(statsTimeStamps) if statsTimeStamps is not None else np.asarray(timeStamps)
+    statsMask = (statsTs >= minTS) & (statsTs <= maxTS)
+    sigma = np.asarray(sigma)[statsMask]
+    threshold = np.asarray(threshold)[statsMask]
+    statsTs = statsTs[statsMask]
+
+    timeStamps = np.asarray(timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)])
+
     # Handle figure and axes
     if ax is None:
         fig, ax = plt.subplots(figsize=(figPosition[2]/100, figPosition[3]/100))
@@ -2790,46 +2880,22 @@ def tsEvaPlotGPDImageSc(Y, timeStamps, epsilon, sigma, threshold, **kwargs):
     else:
         phandles = [ax]
 
-    L = len(timeStamps)
     minTS = timeStamps[0]
     maxTS = timeStamps[-1]
 
     npdf = int(np.ceil(((maxTS - minTS) / avgYearLength) * nPlottedTimesByYear))
-    navg = int(np.ceil(L / npdf))
+    timeStamps_plot = np.linspace(minTS, maxTS, npdf)
 
-    plotSLength = npdf * navg
-    timeStamps_plot = np.linspace(minTS, maxTS, plotSLength)
+    # Epsilon is scalar (shape parameter doesn't vary in time)
+    epsilon0 = np.ones(npdf) * float(epsilon) if not isinstance(epsilon, (list, np.ndarray)) else np.asarray(epsilon)[statsMask]
 
-    # Handle epsilon values
-    if isinstance(epsilon, (list, np.ndarray)):
-        if len(epsilon) == 1:
-            epsilon0 = np.ones(npdf) * epsilon
-    else:
-        epsilon_ = np.full(npdf * navg, np.nan)
-        epsilon_[:L] = epsilon
-        epsilonMtx = epsilon_.reshape(navg, -1)
-        epsilon0 = np.nanmean(epsilonMtx, axis=0).T
+    # Interpolate sigma and threshold from stats grid to plot grid
+    sigma_ = np.interp(timeStamps_plot, statsTs, sigma)
+    threshold_ = np.interp(timeStamps_plot, statsTs, threshold)
 
-    sigma_ = np.interp(timeStamps_plot, timeStamps, sigma)
-    sigmaMtx = sigma_.reshape(-1, navg)
-
-    if sigmaMtx.shape[0] > 1:
-        sigma0 = np.nanmean(sigmaMtx, axis=1)
-        sigma0 = sigma0.T
-    else:
-        sigma0 = np.transpose(sigmaMtx)
-
-    threshold_ = np.interp(timeStamps_plot, timeStamps, threshold)
-    thresholdMtx = threshold_.reshape(-1, navg)
-    if thresholdMtx.shape[0] > 1:
-        threshold0 = np.nanmean(thresholdMtx, axis=1)
-        threshold0 = threshold0.T
-    else:
-        threshold0 = thresholdMtx.T
-    
     _, epsilonMtx = np.meshgrid(Y, epsilon0)
-    _, sigmaMtx = np.meshgrid(Y, sigma0)
-    XMtx, thresholdMtx = np.meshgrid(Y, threshold0)
+    _, sigmaMtx = np.meshgrid(Y, sigma_)
+    XMtx, thresholdMtx = np.meshgrid(Y, threshold_)
     
     gevvar = genpareto.pdf(XMtx-thresholdMtx, c=epsilonMtx, scale=sigmaMtx)
     
@@ -2869,6 +2935,9 @@ def tsEvaPlotGEVImageScFromAnalysisObj(X, nonStationaryEvaParams, stationaryTran
     sigma = nonStationaryEvaParams[0]['parameters']['sigma']
     mu = nonStationaryEvaParams[0]['parameters']['mu']
 
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        kwargs['statsTimeStamps'] = stationaryTransformData.statsTimeStamps
+
     phandles = tsEvaPlotGEVImageSc(X, timeStamps, epsilon, sigma, mu, **kwargs)
     
     
@@ -2879,6 +2948,10 @@ def tsEvaPlotGPDImageScFromAnalysisObj(Y, nonStationaryEvaParams, stationaryTran
     epsilon = nonStationaryEvaParams[1]['parameters']['epsilon']
     sigma = nonStationaryEvaParams[1]['parameters']['sigma']
     threshold = nonStationaryEvaParams[1]['parameters']['threshold']
+
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        kwargs['statsTimeStamps'] = stationaryTransformData.statsTimeStamps
+
     phandles = tsEvaPlotGPDImageSc(Y, timeStamps, epsilon, sigma, threshold, **kwargs)
     
     return phandles
@@ -2914,10 +2987,11 @@ def tsEvaPlotSeriesTrendStdDev(timeStamps, series, trend, stdDev, **kwargs):
     filtered_timeStamps = timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)]
     filtered_series = series[(timeStamps >= minTS) & (timeStamps <= maxTS)]
 
-    filtered_statsTS = statsTimeStamps[(statsTimeStamps >= minTS) & (statsTimeStamps <= maxTS)]
+    statsMask = (statsTimeStamps >= minTS) & (statsTimeStamps <= maxTS)
+    filtered_statsTS = statsTimeStamps[statsMask]
     
-    filtered_trend = trend[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_stdDev = stdDev[(timeStamps >= minTS) & (timeStamps <= maxTS)]
+    filtered_trend = trend[statsMask]
+    filtered_stdDev = stdDev[statsMask]
 
     upCI = filtered_trend + filtered_stdDev
     downCI = filtered_trend - filtered_stdDev
@@ -2982,6 +3056,9 @@ def tsEvaPlotGEV3DFromAnalysisObj(X, nonStationaryEvaParams, stationaryTransform
     sigma = nonStationaryEvaParams[0]['parameters']['sigma']
     mu = nonStationaryEvaParams[0]['parameters']['mu']
 
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        kwargs['statsTimeStamps'] = stationaryTransformData.statsTimeStamps
+
     phandles = tsEvaPlotGEV3D(X, timeStamps, epsilon, sigma, mu, **kwargs)
 
     return phandles
@@ -2999,64 +3076,43 @@ def tsEvaPlotGEV3D(X, timeStamps, epsilon, sigma, mu, **kwargs):
     axisFontSize= kwargs.get('axisFontSize', 20)
     labelFontSize=kwargs.get('labelFontSize', 20)
     ytick = kwargs.get('ytick',[])
+    statsTimeStamps = kwargs.get('statsTimeStamps', None)
 
     min_date=datetime(minyear, 1, 1)
     max_date=datetime(maxyear, 1, 1)
     minTS=min_date.toordinal()
     maxTS=max_date.toordinal()
-    
-    # Ensure timeStamps are in datetime
-    # If they are numeric, convert accordingly
-    # For demonstration, assume they are datetime objects
-    filtered_timeStamps = timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_sigma = sigma[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    filtered_mu = mu[(timeStamps >= minTS) & (timeStamps <= maxTS)]
-    
+
+    # Stats are on their own grid (monthly after _reduce_output_objs)
+    statsTs = np.asarray(statsTimeStamps) if statsTimeStamps is not None else np.asarray(timeStamps)
+    statsMask = (statsTs >= minTS) & (statsTs <= maxTS)
+    sigma = np.asarray(sigma)[statsMask]
+    mu = np.asarray(mu)[statsMask]
+    statsTs = statsTs[statsMask]
+
+    timeStamps = np.asarray(timeStamps[(timeStamps >= minTS) & (timeStamps <= maxTS)])
 
     fig = plt.figure()
     phandles = [fig]
     fig.set_size_inches(13, 7)
 
-    L = len(filtered_timeStamps)
-    
-    # Compute number of points to plot
-    avgYearLength = 365.2425
+    # Compute number of points to plot from full-resolution range
     total_years = (maxTS - minTS)/avgYearLength
     npdf = int(np.ceil(total_years * nPlottedTimesByYear))
-    navg = int(np.ceil(L / npdf))
-    
-    plotSLength = npdf * navg
-    timeStamps_plot = np.linspace(minTS, maxTS, plotSLength)
+    timeStamps_plot = np.linspace(minTS, maxTS, npdf)
 
-    # Handle epsilon
-    if np.shape(epsilon) == ():  # scalar
-        epsilon0 = np.ones(npdf) * epsilon
-    else:
-        epsilon_ = np.full(npdf * navg, np.nan)
-        epsilon_flat = np.array(epsilon).flatten()
-        epsilon_[:L] = epsilon_flat[:L]
-        epsilonMtx = epsilon_.reshape(navg, -1, order='F') 
-        epsilon0 = np.nanmean(epsilonMtx, axis=0)
-        
+    # Epsilon is scalar (shape parameter doesn't vary in time)
+    epsilon0 = np.ones(npdf) * float(epsilon) if not isinstance(epsilon, (list, np.ndarray)) else np.asarray(epsilon)[statsMask]
 
+    # Interpolate sigma and mu from stats grid to plot grid
+    sigma_ = np.interp(timeStamps_plot, statsTs, sigma)
+    mu_ = np.interp(timeStamps_plot, statsTs, mu)
 
-    # Interpolate sigma and mu at plot points
-
-    # Get interpolated values at desired points
-    sigma_ = np.interp(timeStamps_plot, timeStamps, sigma)
-    sigmaMtx = sigma_.reshape(navg, -1, order='F')
-    sigma0 = np.nanmean(sigmaMtx, axis=0)
-        
-    mu_ = np.interp(timeStamps_plot, timeStamps, mu)
-    muMtx = mu_.reshape(navg, -1, order='F')
-    mu0 = np.nanmean(muMtx, axis=0)
-    
     # Generate meshgrid for surface
     _, epsilonMtx = np.meshgrid(X, epsilon0)
-    _, sigmaMtx = np.meshgrid(X, sigma0)
-    XMtx, muMtx = np.meshgrid(X, mu0)
+    _, sigmaMtx = np.meshgrid(X, sigma_)
+    XMtx, muMtx = np.meshgrid(X, mu_)
 
-    timeStamps_plot = np.linspace(minTS, maxTS, len(mu0))
     # Compute GEV PDF
     gevvar = gev.pdf(XMtx, c=epsilonMtx, loc=muMtx, scale=sigmaMtx)
 
@@ -3199,8 +3255,17 @@ def tsEvaPlotReturnLevelsGEV(epsilon, sigma, mu, epsilonStdErr, sigmaStdErr, muS
 
     return phandles
 
+def _stats_grid_index(statsTimeStamps, timeIndex):
+    """Map a full-resolution timestamp to the nearest stats-grid index (monthly grid)."""
+    return int(np.argmin(np.abs(np.asarray(statsTimeStamps) - float(timeIndex))))
+
 def tsEvaPlotReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, timeIndex, **kwargs):
     ylim = kwargs.get('ylim',None)
+
+    # timeIndex may refer to the full-resolution grid — map to stats grid if needed
+    statsTs = kwargs.pop('statsTimeStamps', None)
+    if statsTs is not None:
+        timeIndex = _stats_grid_index(statsTs, timeIndex)
 
     epsilon = nonStationaryEvaParams[0]['parameters']['epsilon']
     sigma = nonStationaryEvaParams[0]['parameters']['sigma'][timeIndex] if isinstance(nonStationaryEvaParams[0]['parameters']['sigma'], np.ndarray) else nonStationaryEvaParams[0]['parameters']['sigma']
@@ -3225,6 +3290,11 @@ def tsEvaPlotReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, timeIndex, *
 def tsEvaPlotReturnLevelsGPDFromAnalysisObj(nonStationaryEvaParams, timeIndex, **kwargs):
 
     ylim = kwargs.get('ylim',None)
+
+    # Map full-resolution timestamp to stats-grid index if needed (monthly grid after _reduce_output_objs)
+    statsTs = kwargs.pop('statsTimeStamps', None)
+    if statsTs is not None:
+        timeIndex = _stats_grid_index(statsTs, timeIndex)
 
     epsilon = nonStationaryEvaParams[1]['parameters']['epsilon']
     sigma = nonStationaryEvaParams[1]['parameters']['sigma'][timeIndex] if isinstance(nonStationaryEvaParams[1]['parameters']['sigma'], np.ndarray) else nonStationaryEvaParams[1]['parameters']['sigma']
@@ -3283,20 +3353,28 @@ def tsPlotSeriesPotGPDRetLevFromAnalysisObj(nonStationaryEvaParams, stationaryTr
         epsilonStdErr, sigmaStdErr, thresholdStdErr,
         nPeaks, timeHorizonInYears, returnPeriods)
 
+    # Return levels are on the stats grid — interpolate to full-resolution timestamps for plotting
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        statsTs = np.asarray(stationaryTransformData.statsTimeStamps)
+    else:
+        statsTs = timestamps
+
     fig, ax = plt.subplots(figsize=(figPosition[2] / 100, figPosition[3] / 100))
     colors = ['r', 'g', 'b', 'k', 'm', 'c']
     ax.plot(timestamps, series, linewidth=0.5, label='Series')
     for i, rp in enumerate(returnPeriods):
-        ax.plot(timestamps, rlevel[:, i], color=colors[i % len(colors)], label=str(rp))
+        rlevel_full = np.interp(timestamps, statsTs, rlevel[:, i])
+        ax.plot(timestamps, rlevel_full, color=colors[i % len(colors)], label=str(rp))
 
     peakIndexes = nonStationaryEvaParams[1]['objs'].get('peakIndexes')
     if peakIndexes is not None:
         ax.plot(timestamps[peakIndexes], series[peakIndexes], '*', color='cyan',
                 markersize=4, label='peaks')
 
-    # Plot threshold as a dashed line
+    # Plot threshold as a dashed line (on stats grid — interpolate for display)
     if isinstance(threshold, np.ndarray):
-        ax.plot(timestamps, threshold, color='gray', linewidth=1.5, linestyle='--', label='threshold')
+        threshold_full = np.interp(timestamps, statsTs, threshold)
+        ax.plot(timestamps, threshold_full, color='gray', linewidth=1.5, linestyle='--', label='threshold')
     else:
         ax.axhline(threshold, color='gray', linewidth=1.5, linestyle='--', label='threshold')
 
@@ -3342,11 +3420,18 @@ def tsPlotSeriesYearMaxGEVRetLevFromAnalysisObj(nonStationaryEvaParams, stationa
         epsilonStdErr, sigmaStdErr, muStdErr,
         returnPeriods)
 
+    # Return levels are on the stats grid — interpolate to full-resolution timestamps for plotting
+    if hasattr(stationaryTransformData, 'statsTimeStamps'):
+        statsTs = np.asarray(stationaryTransformData.statsTimeStamps)
+    else:
+        statsTs = timestamps
+
     fig, ax = plt.subplots(figsize=(figPosition[2] / 100, figPosition[3] / 100))
     colors = ['r', 'g', 'b', 'k', 'm', 'c']
     ax.plot(timestamps, series, linewidth=0.5, label='Series')
     for i, rp in enumerate(returnPeriods):
-        ax.plot(timestamps, rlevel[:, i], color=colors[i % len(colors)], label=f'{rp}-yr')
+        rlevel_full = np.interp(timestamps, statsTs, rlevel[:, i])
+        ax.plot(timestamps, rlevel_full, color=colors[i % len(colors)], label=f'{rp}-yr')
 
     annualMaxIndexes = nonStationaryEvaParams[0]['objs'].get('annualMaxIndexes')
     if annualMaxIndexes is not None:
