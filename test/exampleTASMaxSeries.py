@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
 from datetime import datetime
 import os
 import sys
@@ -17,8 +21,8 @@ from tsEva import tsEvaPlotReturnLevelsGEVFromAnalysisObj
 # It is a series of yearly maxima, therefore it is fit for a GEV analysis, while a GPD analysis is meaningless.
 
 # Load data
-current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesTASMax.csv"
+current_working_directory = os.path.dirname(os.path.abspath(__file__))
+data_file_name= current_working_directory+"/data/timeAndSeriesTASMax.csv"
 data = pd.read_csv(data_file_name, header=None)
 timeAndSeries = data.values
 seriesDescr = 'TASMax'
@@ -34,19 +38,19 @@ labelFontSize = 24
 titleFontSize = 26
 
    
-nonStationaryEvaParams, stationaryTransformData, isValid = tsEvaNonStationary( timeAndSeries, timeWindow, minPeakDistanceInDays=minPeakDistanceInDays, extremeLowThreshold=.1, evdType='GEV')
+nonStationaryEvaParams, stationaryTransformData, isValid = tsEvaNonStationary( timeAndSeries, timeWindow, minPeakDistanceInDays=minPeakDistanceInDays, extremeLowThreshold=.1, evdType=['GEV'])
 
 tsEvaPlotSeriesTrendStdDevFromAnalysisObj(nonStationaryEvaParams, stationaryTransformData, ylabel='TAS', legendLocation='upper left')
-plt.text(datetime_to_datenum(datetime(2060, 1, 1)), 35, 'Series and trends', fontsize=25)
+plt.title('TAS annual maxima: series and trends')
 plt.ylim(0, 40)
-plt.savefig('seriesAndTrends_TAS.png')
-plt.show()
+save_figure('seriesAndTrends_TAS.png')
+plt.close('all')  # Agg: release figure memory after saving
 
-tsEvaPlotGEVImageScFromAnalysisObj(np.arange(0, 40, 0.001), nonStationaryEvaParams, stationaryTransformData, ylabel='TAS')
-plt.text(datetime_to_datenum(datetime(1980, 1, 1)), 35, 'Time varying GEV', fontsize=30)
+tsEvaPlotGEVImageScFromAnalysisObj(np.arange(0, 40, 0.025), nonStationaryEvaParams, stationaryTransformData, ylabel='TAS', nPlottedTimesByYear=1)
+plt.title('Time-varying GEV density for TAS')
 plt.ylim(0, 40)
-plt.savefig('TimeVaryingGEV_TAS.png')
-plt.show()
+save_figure('TimeVaryingGEV_TAS.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 returnLevels, returnLevelsErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, returnPeriodsInYears)
 print("Return Levels (TAS): ", returnLevels)
@@ -56,15 +60,17 @@ rlRange = [0, 14]
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, timeIndex, ylim=rlRange, ylabel='return levels (TAS)')
 ax = plt.gca()
 ax.set_yticks(range(0, 17, 2))
-plt.text(30, 12.5, 'Return level 1995', fontsize=30)
-plt.savefig('ReturnLevel1995.png')
-plt.show()
+plt.title('TAS return levels, 1995')
+plt.ylabel('TAS return level')
+save_figure('ReturnLevel1995.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 timeIndex = len(timeAndSeries) - 4
 rlRange = [0, 70]
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, timeIndex, ylim=rlRange, ylabel='return levels (TAS)')
 ax = plt.gca()
 ax.set_yticks(range(0, 75, 5))
-plt.text(30, 65, 'Return level 2095', fontsize=30)
-plt.savefig('ReturnLevel2095.png')
-plt.show()
+plt.title('TAS return levels, 2095')
+plt.ylabel('TAS return level')
+save_figure('ReturnLevel2095.png')
+plt.close('all')  # Agg: release figure memory after saving

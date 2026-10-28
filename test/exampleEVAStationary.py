@@ -1,10 +1,15 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
 from scipy.stats import genextreme, genpareto
 import pandas as pd
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from tsEva import tsEvaStationary
 from tsEva import tsEvaGetTimeStep
 from tsEva import tsEvaComputeReturnLevelsGEVFromAnalysisObj
@@ -17,8 +22,8 @@ from tsEva import tsEvaPandasDate2DateNum
 
 # Load the dataset (assuming it's a CSV file, adjust as needed)
 # Assuming 'timeAndSeriesHebrides.mat' is a CSV file
-current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
+current_working_directory = os.path.dirname(os.path.abspath(__file__))
+data_file_name= current_working_directory+"/data/timeAndSeriesHebrides.csv"
 data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
 
 # Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
@@ -44,14 +49,14 @@ print("rlevGEVErr=", rlevGEVErr)
 # Plotting the GEV return levels
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
 plt.title('GEV')
-plt.savefig('GEV_ReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('GEV_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # Plotting the series with GEV return levels
 hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
 hndl['fig'].suptitle('GEV')
-hndl['fig'].savefig('GEV_SeriesReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('GEV_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
 
 # For GPD fitting, we use the generalized Pareto distribution
 
@@ -62,17 +67,17 @@ print("rlevGPDErr=", rlevGPDErr)
 # Plotting the GPD return levels
 hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
 plt.title('GPD')
-plt.savefig('GPD_ReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('GPD_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # Plotting the series with GPD return levels
 hndl = tsPlotSeriesPotGPDRetLevStationary(statEvaParams, timeAndSeries)
 hndl['fig'].suptitle('GPD')
-hndl['fig'].savefig('GPD_SeriesReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('GPD_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
 
 print("Same as before, but the POT is done with a fixed threshold")
-potThreshold = np.percentile(timeAndSeries[:, 1], 98)
+potThreshold = np.nanpercentile(timeAndSeries[:, 1], 98)
 statEvaParams = tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays,doSampleData=False,potThreshold=potThreshold)
 rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(statEvaParams, return_periods)
 print ("rlevGPD=",rlevGPD)
@@ -80,8 +85,8 @@ print ("rlevGPDErr=",rlevGPDErr)
 # Plotting the GPD return levels
 hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
 plt.title('GPD')
-plt.savefig('GPD_ReturnLevels_STATIONARY_THR.png')
-plt.show()
+save_figure('GPD_ReturnLevels_STATIONARY_THR.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print ("Gumbel")
 # Gumbel distribution fit (special case of GEV with shape = 0)
@@ -93,14 +98,14 @@ print("rlevGEVErr=", rlevGEVErr)
 # Plotting the GEV return levels
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(statEvaParams, 0, ylim=[.5,1.5])
 plt.title('Gumbel')
-plt.savefig('Gumbel_ReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('Gumbel_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # Plotting the series with Gumbel return levels
 hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
 hndl['fig'].suptitle('Gumbel')
-hndl['fig'].savefig('Gumbel_SeriesReturnLevels_STATIONARY.png')
-plt.show()
+save_figure('Gumbel_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
 
 
 

@@ -1,6 +1,10 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,8 +19,8 @@ from tsEva import tsEvaPlotSeriesTrendStdDevFromAnalysisObj
 # full GEV
 
 # Load data
-current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeries_SPI_179_750E_-16.750N.csv"
+current_working_directory = os.path.dirname(os.path.abspath(__file__))
+data_file_name= current_working_directory+"/data/timeAndSeries_SPI_179_750E_-16.750N.csv"
 data = pd.read_csv(data_file_name, header=None)
 timeAndSeries = data.values
 seriesDescr = 'SPI_179_750E_-16.750N'
@@ -33,11 +37,11 @@ labelFontSize = 24
 titleFontSize = 26
 
    
-nonStationaryEvaParams, stationaryTransformData, isValid = tsEvaNonStationary( timeAndSeries, timeWindow, minPeakDistanceInDays=minPeakDistanceInDays, transfType='trendCIPercentile', ciPercentile=80, evdType='GEV',gevType='Gumbel')
+nonStationaryEvaParams, stationaryTransformData, isValid = tsEvaNonStationary( timeAndSeries, timeWindow, minPeakDistanceInDays=minPeakDistanceInDays, transfType='trendCIPercentile', ciPercentile=80, evdType=['GEV'],gevType='Gumbel')
 tsEvaPlotSeriesTrendStdDevFromAnalysisObj(nonStationaryEvaParams, stationaryTransformData, plotPercentile=95., ylabel='-SPI', legendLocation='lower left')
 
 returnLevels, returnLevelsErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(nonStationaryEvaParams, returnPeriodsInYears)
 returnLevels = returnLevels*-1
 print("Return Levels (GEV): ", returnLevels)
-plt.savefig('seriesSPI_Gumbel.png')
-plt.show()
+save_figure('seriesSPI_Gumbel.png')
+plt.close('all')  # Agg: release figure memory after saving

@@ -1,0 +1,111 @@
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for file output
+import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
+from scipy.stats import genextreme, genpareto
+import pandas as pd
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from tsEva import tsEvaStationary
+from tsEva import tsEvaGetTimeStep
+from tsEva import tsEvaComputeReturnLevelsGEVFromAnalysisObj
+from tsEva import tsEvaComputeReturnLevelsGPDFromAnalysisObj
+from tsEva import tsEvaPlotReturnLevelsGEVFromAnalysisObj
+from tsEva import tsEvaPlotReturnLevelsGPDFromAnalysisObj
+from tsEva import tsPlotSeriesYearMaxGEVRetLevStationary
+from tsEva import tsPlotSeriesPotGPDRetLevStationary
+from tsEva import tsEvaPandasDate2DateNum
+
+# Load the dataset (assuming it's a CSV file, adjust as needed)
+# Assuming 'timeAndSeriesHebrides.mat' is a CSV file
+current_working_directory = os.path.dirname(os.path.abspath(__file__))
+data_file_name= current_working_directory+"/data/timeAndSeriesHebrides.csv"
+data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
+
+# Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
+dates = pd.to_datetime(data[['year','month','day','hour']])
+timestamps = tsEvaPandasDate2DateNum(dates)
+timeAndSeries = np.column_stack([timestamps, data['value'].values])
+minPeakDistanceInDays = 3
+
+print('Stationary fit of extreme value distributions (GEV, GPD) to a time series')
+
+
+# Stationary fitting (Here, you would fit the GEV and GPD distributions)
+# For GEV, we use the generalized extreme value distribution from scipy
+
+statEvaParams=tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays)
+
+return_periods = [10, 20, 50, 100]
+
+rlevGEV,rlevGEVErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(statEvaParams, return_periods)
+print("rlevGEV=", rlevGEV)
+print("rlevGEVErr=", rlevGEVErr)
+
+# Plotting the GEV return levels
+hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
+plt.title('GEV')
+save_figure('GEV_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
+
+# Plotting the series with GEV return levels
+hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('GEV')
+save_figure('GEV_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
+
+# For GPD fitting, we use the generalized Pareto distribution
+
+rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(statEvaParams, return_periods)
+print("rlevGPD=", rlevGPD)
+print("rlevGPDErr=", rlevGPDErr)
+
+# Plotting the GPD return levels
+hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
+plt.title('GPD')
+save_figure('GPD_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
+
+# Plotting the series with GPD return levels
+hndl = tsPlotSeriesPotGPDRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('GPD')
+save_figure('GPD_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
+
+print("Same as before, but the POT is done with a fixed threshold")
+potThreshold = np.nanpercentile(timeAndSeries[:, 1], 98)
+statEvaParams = tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays,doSampleData=False,potThreshold=potThreshold)
+rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(statEvaParams, return_periods)
+print ("rlevGPD=",rlevGPD)
+print ("rlevGPDErr=",rlevGPDErr)
+# Plotting the GPD return levels
+hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(statEvaParams, 0, ylim=[0.5, 1.5])
+plt.title('GPD')
+save_figure('GPD_ReturnLevels_STATIONARY_THR.png')
+plt.close('all')  # Agg: release figure memory after saving
+
+print ("Gumbel")
+# Gumbel distribution fit (special case of GEV with shape = 0)
+statEvaParams = tsEvaStationary(timeAndSeries, minPeakDistanceInDays=minPeakDistanceInDays,gevType='Gumbel')
+#print ("GEV statEvaParams=",statEvaParams['GEVstat'])
+rlevGEV,rlevGEVErr = tsEvaComputeReturnLevelsGEVFromAnalysisObj(statEvaParams, return_periods)
+print("rlevGEV=", rlevGEV)
+print("rlevGEVErr=", rlevGEVErr)
+# Plotting the GEV return levels
+hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(statEvaParams, 0, ylim=[.5,1.5])
+plt.title('Gumbel')
+save_figure('Gumbel_ReturnLevels_STATIONARY.png')
+plt.close('all')  # Agg: release figure memory after saving
+
+# Plotting the series with Gumbel return levels
+hndl = tsPlotSeriesYearMaxGEVRetLevStationary(statEvaParams, timeAndSeries)
+hndl['fig'].suptitle('Gumbel')
+save_figure('Gumbel_SeriesReturnLevels_STATIONARY.png', fig=hndl['fig'])
+plt.close('all')  # Agg: release figure memory after saving
+
+
+

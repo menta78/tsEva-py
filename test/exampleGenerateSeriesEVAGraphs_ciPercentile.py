@@ -1,11 +1,16 @@
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for file output
 import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
 from datetime import datetime
 import matplotlib.dates as mdates
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from tsEva import tsEvaComputeReturnLevelsGEVFromAnalysisObj
 from tsEva import tsEvaPandasDate2DateNum
 from tsEva import tsEvaComputeReturnLevelsGPDFromAnalysisObj
@@ -28,8 +33,8 @@ from tsEva import datetime_to_datenum
 # uncertainty.
 
 # Load data
-current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
+current_working_directory = os.path.dirname(os.path.abspath(__file__))
+data_file_name= current_working_directory+"/data/timeAndSeriesHebrides.csv"
 data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
 # Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour
 dates = pd.to_datetime(data[['year','month','day','hour']])
@@ -67,26 +72,26 @@ nonStatEvaParams, statTransfData, isValid = tsEvaNonStationary(timeAndSeries, ti
 print('  plotting the series')
 hndl = tsEvaPlotSeriesTrendStdDevFromAnalysisObj(nonStatEvaParams, statTransfData, legendLocation='upper right',ylabel='Lvl (m)', title=seriesDescr, titleFontSize=titleFontSize, dateformat='%y', xtick=tickTmStmp)
 print('  saving the series plot')
-plt.savefig('seriesTrendOnly_ciPercentile.png')
-plt.show()
+save_figure('seriesTrendOnly_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # Uncomment the following lines if needed
 # print('  plotting and saving the 3D GEV graph')
-# hndl = tsEvaPlotGEV3DFromAnalysisObj(wr, nonStatEvaParams, statTransfData, xlabel='Lvl (m)', axisfontsize=axisFontSize3d)
+# hndl = tsEvaPlotGEV3DFromAnalysisObj(wr, nonStatEvaParams, statTransfData, xlabel='Lvl (m)', axisfontsize=axisFontSize3d, nPlottedTimesByYear=24)
 # plt.title('GEV 3D', fontsize=titleFontSize)
-# plt.savefig('GEV3DTrendOnly_ciPercentile.png')
+# save_figure('GEV3DTrendOnly_ciPercentile.png')
 
 print('  plotting and saving the 2D GEV graph')
-hndl = tsEvaPlotGEVImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp)
+hndl = tsEvaPlotGEVImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp, nPlottedTimesByYear=24)
 plt.title('GEV', fontsize=titleFontSize)
-plt.savefig('GEV2DTrendOnly_ciPercentile.png')
-plt.show()
+save_figure('GEV2DTrendOnly_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('  plotting and saving the 2D GPD graph')
-hndl = tsEvaPlotGPDImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp)
+hndl = tsEvaPlotGPDImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp, nPlottedTimesByYear=24)
 plt.title('GPD', fontsize=titleFontSize)
-plt.savefig('GPD2DTrendOnly_ciPercentile.png')
-plt.show()
+save_figure('GPD2DTrendOnly_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 #Computing and plotting the return levels for a given time
 timeIndex = 999
@@ -102,22 +107,22 @@ print("rlevGEV=", rlevGEV)
 print("rlevGEVErr=", rlevGEVErr)
 hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(nonStatEvaParams, timeIndex, ylim=rlRange)
 plt.title('GEV return levels for ' + tmstmpref.strftime('%d-%b-%Y'), fontsize=titleFontSize)
-plt.savefig('GEV_ReturnLevels_ciPercentile.png')
-plt.show()
+save_figure('GEV_ReturnLevels_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 rlevGPD,rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(nonStatEvaParams, return_periods,timeIndex=timeIndex)
 print("rlevGPD=", rlevGPD)
 print("rlevGPDErr=", rlevGPDErr)
 hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(nonStatEvaParams, timeIndex, ylim=rlRange)
 plt.title('GPD return levels for ' + tmstmpref.strftime('%d-%b-%Y'), fontsize=titleFontSize)
-plt.savefig('GPD_ReturnLevels_ciPercentile.png')
-plt.show()
+save_figure('GPD_ReturnLevels_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 
 print('plotting and saving stationary series')
 hndl = tsEvaPlotTransfToStatFromAnalysisObj(nonStatEvaParams, statTransfData, ylabel='Lvl (m)', xlabel='Year', dateformat='%y', xtick=tickTmStmp, ylim=[-4, 11])
-plt.savefig('statSeriesTrendOnly_ciPercentile.png')
-plt.show()
+save_figure('statSeriesTrendOnly_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('seasonal statistics')
 nonStatEvaParams, statTransfData, isValid = tsEvaNonStationary(timeAndSeries, timeWindow, transfType='seasonalCIPercentile', ciPercentile=ciPercentile, minPeakDistanceInDays=minPeakDistanceInDays)
@@ -131,27 +136,27 @@ plotTitle = '1990-1995'
 print('    plotting the series')
 hndl = tsEvaPlotSeriesTrendStdDevFromAnalysisObj(nonStatEvaParams, statTransfData,ylabel='Lvl (m)', dateformat='%Y', title=plotTitle, minYear=slice[0], maxYear=slice[1], xtick=tickTmStmp)
 print('    saving the series plot')
-plt.savefig('seriesSeasonal_ciPercentile.png')
-plt.show()
+save_figure('seriesSeasonal_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('plotting and saving stationary series')
 hndl = tsEvaPlotTransfToStatFromAnalysisObj(nonStatEvaParams, statTransfData,ylabel='Lvl (m)', xlabel='Year', dateformat='%y', minyear=slice[0], maxyear=slice[1], xtick=tickTmStmp)
-plt.savefig('statSeriesTrendOnlySeasonal_ciPercentile.png')
-plt.show()
+save_figure('statSeriesTrendOnlySeasonal_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('    plotting and saving the 3D GEV graph')
-hndl = tsEvaPlotGEV3DFromAnalysisObj(wr, nonStatEvaParams, statTransfData, xlabel='Lvl (m)', dateformat='%Y', minyear=slice[0], maxyear=slice[1], ytick=tickTmStmp, axisfontsize=axisFontSize3d)
+hndl = tsEvaPlotGEV3DFromAnalysisObj(wr, nonStatEvaParams, statTransfData, xlabel='Lvl (m)', dateformat='%Y', minyear=slice[0], maxyear=slice[1], ytick=tickTmStmp, axisfontsize=axisFontSize3d, nPlottedTimesByYear=24)
 plt.title(f'GEV 3D, {plotTitle}', fontsize=titleFontSize)
-plt.savefig('GEV3DSeasonal_ciPercentile.png')
-plt.show()
+save_figure('GEV3DSeasonal_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('    plotting and saving the 2D GEV graph')
-hndl = tsEvaPlotGEVImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', minYear=slice[0], maxYear=slice[1], dateformat='%y', xtick=tickTmStmp)
+hndl = tsEvaPlotGEVImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', minYear=slice[0], maxYear=slice[1], dateformat='%y', xtick=tickTmStmp, nPlottedTimesByYear=24)
 plt.title(f'GEV {plotTitle}', fontsize=titleFontSize)
-plt.savefig('GEV2DSeasonal_ciPercentile.png')
-plt.show()
+save_figure('GEV2DSeasonal_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving
 print('    plotting and saving the 2D GPD graph')
-hndl = tsEvaPlotGPDImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', minYear=slice[0], maxYear=slice[1], dateformat='%y', xtick=tickTmStmp)
+hndl = tsEvaPlotGPDImageScFromAnalysisObj(wr, nonStatEvaParams, statTransfData, ylabel='Lvl (m)', minYear=slice[0], maxYear=slice[1], dateformat='%y', xtick=tickTmStmp, nPlottedTimesByYear=24)
 plt.title(f'GPD {plotTitle}', fontsize=titleFontSize)
-plt.savefig('GPD2DSeasonal_ciPercentile.png')
-plt.show()
+save_figure('GPD2DSeasonal_ciPercentile.png')
+plt.close('all')  # Agg: release figure memory after saving

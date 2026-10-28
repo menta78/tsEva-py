@@ -13,10 +13,12 @@ from tsEva import tsPlotSeriesYearMaxGEVRetLevStationary
 from tsEva import tsPlotSeriesPotGPDRetLevStationary
 from tsEva import tsEvaPandasDate2DateNum
 
-# Load the dataset (assuming it's a CSV file, adjust as needed)
-# Assuming 'timeAndSeriesHebrides.mat' is a CSV file
-current_working_directory = os.getcwd()
-data_file_name= current_working_directory+"/test/data/timeAndSeriesHebrides.csv"
+# Load the Hebrides dataset from the project, independent of working directory.
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+data_file_name = project_root / 'test_monovariate' / 'data' / 'timeAndSeriesHebrides.csv'
+if not data_file_name.is_file():
+    raise FileNotFoundError(f'Hebrides dataset not found: {data_file_name}')
 data = pd.read_csv(data_file_name, header=None, names=['year','month','day','hour','value'])
 
 # Compute tsEva timestamps (MATLAB serial days) from year/month/day/hour

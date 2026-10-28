@@ -13,6 +13,8 @@ import scipy.io
 import matplotlib
 matplotlib.use('Agg')  # non-interactive backend for testing
 import matplotlib.pyplot as plt
+from monovariate_plot_style import configure_plotting, save_figure
+configure_plotting()
 from datetime import datetime
 import os
 import sys
@@ -91,8 +93,8 @@ hndl = tsEvaPlotSeriesTrendStdDevFromAnalysisObj(
     dateformat='%y',
     xtick=tickTmStmp,
 )
-plt.savefig('seriesTrendLinear.png')
-plt.show()
+save_figure('seriesTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # Series + POT peaks + time-varying GPD return levels
@@ -103,8 +105,8 @@ hndl = tsPlotSeriesPotGPDRetLevFromAnalysisObj(
     ylabel='TWL (m)', dateformat='%y', xtick=tickTmStmp,
 )
 plt.title('GPD return levels', fontsize=titleFontSize)
-plt.savefig('PotAndReturnLevelsTrendLinear.png')
-plt.show()
+save_figure('PotAndReturnLevelsTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # Series + annual maxima + time-varying GEV return levels
@@ -115,8 +117,8 @@ hndl = tsPlotSeriesYearMaxGEVRetLevFromAnalysisObj(
     ylabel='TWL (m)', dateformat='%y', xtick=tickTmStmp,
 )
 plt.title('GEV return levels', fontsize=titleFontSize)
-plt.savefig('YearMaxGEVReturnLevelsTrendLinear.png')
-plt.show()
+save_figure('YearMaxGEVReturnLevelsTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # 2D GEV image
@@ -125,10 +127,10 @@ print('  plotting and saving the 2D GEV graph')
 hndl = tsEvaPlotGEVImageScFromAnalysisObj(
     wr, nonStatEvaParams, statTransfData,
     ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp,
-)
+ nPlottedTimesByYear=24)
 plt.title('GEV', fontsize=titleFontSize)
-plt.savefig('GEV2DTrendLinear.png')
-plt.show()
+save_figure('GEV2DTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # 2D GPD image
@@ -137,10 +139,10 @@ print('  plotting and saving the 2D GPD graph')
 hndl = tsEvaPlotGPDImageScFromAnalysisObj(
     wr, nonStatEvaParams, statTransfData,
     ylabel='Lvl (m)', dateformat='%y', xtick=tickTmStmp,
-)
+ nPlottedTimesByYear=24)
 plt.title('GPD', fontsize=titleFontSize)
-plt.savefig('GPD2DTrendLinear.png')
-plt.show()
+save_figure('GPD2DTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # Return levels at two time indices (beginning and end of series)
@@ -163,16 +165,16 @@ for lx, timeIndex in enumerate([999, len(timeStamps) - 1000]):
     hndl = tsEvaPlotReturnLevelsGEVFromAnalysisObj(
         nonStatEvaParams, timeIndex, ylim=rlRange, maxReturnPeriodYears=200)
     plt.title(f'GEV return levels — {tmstmpref.strftime("%b-%Y")}', fontsize=titleFontSize)
-    plt.savefig(f'GEV_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
-    plt.show()
+    save_figure(f'GEV_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
+    plt.close('all')  # Agg: release figure memory after saving
 
     rlevGPD, rlevGPDErr = tsEvaComputeReturnLevelsGPDFromAnalysisObj(
         nonStatEvaParams, return_periods, timeIndex=timeIndex)
     hndl = tsEvaPlotReturnLevelsGPDFromAnalysisObj(
         nonStatEvaParams, timeIndex, ylim=rlRange, maxReturnPeriodYears=200)
     plt.title(ttl, fontsize=titleFontSize)
-    plt.savefig(f'GPD_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
-    plt.show()
+    save_figure(f'GPD_ReturnLevelsTrendLinear_{"beg" if lx == 0 else "end"}.png')
+    plt.close('all')  # Agg: release figure memory after saving
 
 # ---------------------------------------------------------------------------
 # Stationary series plot
@@ -184,7 +186,7 @@ hndl = tsEvaPlotTransfToStatFromAnalysisObj(
     dateformat='%y', xtick=tickTmStmp,
     ylim=[-4, 11],
 )
-plt.savefig('statSeriesTrendLinear.png')
-plt.show()
+save_figure('statSeriesTrendLinear.png')
+plt.close('all')  # Agg: release figure memory after saving
 
 print('Done.')
