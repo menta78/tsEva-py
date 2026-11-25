@@ -577,7 +577,11 @@ def _count_pair_exceedances(samplingAnalysis, windows, nSeries):
       N10[i,j]: events where only i exceeds
       N01[i,j]: events where only j exceeds
 
-    An event "exceeds" in variable v if its value is finite in that variable's column.
+    An event "exceeds" in variable v if its value is >= the POT threshold for v
+    (thresholdsC[v]). This is essential because non-peak events (jointextremes2)
+    carry finite sub-threshold values in the non-exceeding variable's column, so
+    np.isfinite alone would incorrectly mark every variable as exceeding.
+
     Events are taken from jointextremes (matched / all-exceed) and jointextremes2
     (non-peak / any-exceed) stacked together, so the per-pair states are exhaustive.
 
@@ -587,6 +591,7 @@ def _count_pair_exceedances(samplingAnalysis, windows, nSeries):
     """
     jointextremes = samplingAnalysis['jointextremes']
     jointextremes2 = samplingAnalysis['jointextremes2']
+    thresholdsC = samplingAnalysis['thresholdsC']      # list of nSeries thresholds
 
     nWin = len(windows)
     N11 = np.zeros((nWin, nSeries, nSeries))
@@ -599,7 +604,10 @@ def _count_pair_exceedances(samplingAnalysis, windows, nSeries):
         return N11, N10, N01
     allEvents = np.vstack(blocks)                      # (nTotal, nSeries, 2)
     allTimes = allEvents[:, 0, 0]                      # use var-0 time (identical across vars)
-    exceed = np.isfinite(allEvents[:, :, 1])           # (nTotal, nSeries) boolean
+    # Exceedance: value >= threshold for that variable (finite AND above threshold)
+    exceed = np.zeros((allEvents.shape[0], nSeries), dtype=bool)
+    for v in range(nSeries):
+        exceed[:, v] = np.isfinite(allEvents[:, v, 1]) & (allEvents[:, v, 1] >= thresholdsC[v])
 
     for k, w in enumerate(windows):
         in_win = (allTimes >= w[0]) & (allTimes <= w[-1])
@@ -660,18 +668,23 @@ def tsEvaExPostCorrOfGaussianRho(samplingAnalysis, windows, rhoOriginal, maxLagI
     PAIR by pair, to account for marginal (unpaired) exceedances that dilute the
     observed correlation.
 
-    Model (mixture / moment), applied independently to each sub-bivariate pair (i, j):
-      the observed any-peak pool is a mixture of
-        - paired (joint) events, fraction w_ij, carrying the TRUE correlation rho_true, and
-        - unpaired (marginal-only) events, fraction (1-w_ij), assumed UNCORRELATED (rho=0).
-      Hence  rho_obs_ij = w_ij * rho_true_ij  =>  rho_corr_ij = rho_obs_ij / w_ij.
+    Model, applied independently to each sub-bivariate pair (i, j):
+      the copula is fitted on the any-peak pool, which is enriched for joint events
+      relative to the full process. The unpaired (marginal-only) events that are
+      excluded from the joint sample would have pulled the correlation toward 0.
+      The symmetric fraction w_ij estimates what share of the full event pool is
+      truly paired; multiplying by w_ij attenuates |rho| toward 0 to account for
+      the unpaired events that the joint sample does not represent.
+
+      rho_corr_ij = rho_obs_ij * w_ij
 
     w_ij uses the SYMMETRIC fraction for that pair:
         w_ij = 2*N11_ij / (2*N11_ij + N10_ij + N01_ij)
 
     Only off-diagonals are corrected; the diagonal stays 1. A PSD guard clips the
-    corrected off-diagonals back into the positive semi-definite cone (dividing by
-    w < 1 inflates them, which can otherwise break PSD, especially for nSeries > 2).
+    corrected off-diagonals back into the positive semi-definite cone (multiplying
+    by w < 1 shrinks them, which can in rare asymmetric cases break PSD for
+    nSeries > 2).
 
     rhoOriginal: list of (nSeries, nSeries) correlation matrices, one per window.
     """
@@ -691,7 +704,7 @@ def tsEvaExPostCorrOfGaussianRho(samplingAnalysis, windows, rhoOriginal, maxLagI
                 if denom > 0:
                     w = (2 * N11[k, i, j]) / denom
                     if w > 0:
-                        val = np.clip(rho_obs[i, j] / w, -1.0, 1.0)
+                        val = np.clip(rho_obs[i, j] * w, -1.0, 1.0)
                         rho_corr[i, j] = val
                         rho_corr[j, i] = val
                 # else: empty window / no joint signal -> keep observed correlation
