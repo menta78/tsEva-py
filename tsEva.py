@@ -1130,12 +1130,15 @@ def tsEvaButterLowPass(series, windowSize, order=2):
 
 
 def tsEvaRunningCentralMoments(series, windowSize, order=2):
-    """Running 3rd and 4th central moments via Butterworth low-pass smoothing.
+    """Running 3rd and 4th central moments (window-averaged).
 
     Computes the local central moments around a Butterworth-smoothed running
-    mean, then applies a Butterworth low-pass filter to the moment series
-    themselves.  Replaces the legacy running-statistics call for
-    higher-moment diagnostics.
+    mean, then averages the pointwise diff**3 / diff**4 over a centred
+    window of width *windowSize*.  This mirrors the MATLAB
+    ``tsEvaNanRunningStatistics`` approach: the window average is the
+    natural smoother for higher-order moments and avoids the edge
+    distortion that a Butterworth filter introduces on noisy,
+    high-amplitude signals.
 
     Parameters
     ----------
@@ -1144,29 +1147,31 @@ def tsEvaRunningCentralMoments(series, windowSize, order=2):
     windowSize : float
         Equivalent running-mean window width in samples.
     order : int, optional
-        Butterworth filter order (default 2).
+        Butterworth filter order for the running mean (default 2).
 
     Returns
     -------
     tuple of numpy.ndarray
-        ``(mom3, mom4)`` — running 3rd and 4th central moments, each
-        Butterworth-smoothed.
+        ``(mom3, mom4)`` — running 3rd and 4th central moments,
+        window-averaged over *windowSize* samples.
     """
     series = np.asarray(series, dtype=float)
     n = len(series)
-    if n < 4 * order + 2:
+    if n < 4:
         return np.full(n, np.nan), np.full(n, np.nan)
 
     # Butterworth-smoothed running mean (zero-phase, no boundary bias)
     rnmn = tsEvaButterLowPass(series, windowSize, order)
 
     diff = series - rnmn
-    mom3_raw = diff ** 3
-    mom4_raw = diff ** 4
+    w = max(int(round(windowSize)), 2)
 
-    # Smooth the moment series with the same Butterworth filter
-    mom3 = tsEvaButterLowPass(mom3_raw, windowSize, order)
-    mom4 = tsEvaButterLowPass(mom4_raw, windowSize, order)
+    # Window-averaged moments: mean of diff**k over a centred window.
+    # min_periods=1 so the edges get a value (averaged over the
+    # available samples), matching the MATLAB behaviour where the
+    # window "gradually increases" at the boundaries.
+    mom3 = pd.Series(diff ** 3).rolling(w, center=True, min_periods=1).mean().values
+    mom4 = pd.Series(diff ** 4).rolling(w, center=True, min_periods=1).mean().values
 
     return mom3, mom4
 
