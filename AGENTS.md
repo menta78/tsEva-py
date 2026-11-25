@@ -19,7 +19,7 @@ Two core modules:
 ## Test Structure
 
 - **`test_monovariate/`** — Example scripts demonstrating monovariate EVA workflows. Each script loads data from `./data/*.csv` relative to its own directory.
-- **`test_multivariate/`** — Case studies (01: river discharge + SWH GPD, 02: trivariate SWH Gumbel, 03: SPEI + temperature GEV). Data in `./data/caseStudy*_data.mat`.
+- **`test_multivariate/`** — Case studies (01: river discharge + SWH GPD, 02: trivariate SWH Gumbel, 03: SPEI + temperature GEV). Data in `./data/caseStudy*_data.mat`. Also `exampleMultivariateExPostCorrection.py` — synthetic trivariate test demonstrating the ex-post correction (per-pair w, Gaussian rho attenuation, Gumbel theta) with weakly-correlated GPD series.
 
 ## Running Tests
 
@@ -66,6 +66,8 @@ GPD uses threshold-based parameterization: shape (ξ), scale (σ), threshold (u)
 1. **Working directory matters** — test scripts use relative paths to data files. Always run from the script's own directory.
 2. **GEV sign convention** — forgetting that scipy uses c = -ε will produce incorrect fits and return levels.
 3. **Bootstrap CI computation** — `tsEva.py` uses percentile-based CIs (32nd/68th percentiles of bootstrap samples), not standard error propagation. Don't confuse with parametric methods.
+4. **Ex-post correction is a no-op for strongly-correlated data** — when all sampled combos are all-exceed (tightly-correlated stations), `jointextremes2` is empty → w=1.0 → no change. This is correct, not a bug. The correction only engages when genuine unpaired (marginal-only) exceedances exist.
+5. **Ex-post correction direction** — Gaussian: `rho_corr = rho_obs * w` (always decreases |ρ| toward 0). Gumbel: `lambdaC = w * lambdaU` (pushes θ toward 1 = independence). Do NOT invert these.
 
 ## Reference Implementation
 
