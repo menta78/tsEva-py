@@ -228,7 +228,7 @@ def tsCopulaExtremes(inputtimestamps, inputtimeseries, **kwargs):
     timeSlide = kwargs.get('timeSlide', 365.25)
     minPeakDistanceInDaysMonovarSampling = kwargs.get('minPeakDistanceInDaysMonovarSampling', [3] * nSeries)
     maxPeakDistanceInDaysMultivarSampling = kwargs.get('maxPeakDistanceInDaysMultivarSampling', 3)
-    peakType = kwargs.get('peakType', 'allexceedthreshold')
+    peakType = kwargs.get('peakType', 'anyexceedthreshold')
     samplingOrder = kwargs.get('samplingOrder', [])
     smoothInd = kwargs.get('smoothInd', -1)
     timeVaryingCopula = kwargs.get('timeVaryingCopula', True)
@@ -493,74 +493,215 @@ def tsCopulaExtremes(inputtimestamps, inputtimeseries, **kwargs):
             gpdCDFCopula[:, ii] = gpdCdf
 
     if kwargs.get('exPostCorrection', True):
-        # Only apply correction to bivariate Gumbel + GPD; for other cases, silently skip
-        if nSeries == 2 and str(copulaFamily).lower() == 'gumbel' and marginalDistributions == 'gpd':
-            pairTheta = np.array([[r[0, 1] for r in rhoTotal]])
+        fam = str(copulaFamily).lower()
+        # Gumbel + GPD (bivariate or multivariate): per-pair rescaling of the shared-shock
+        # rate via the symmetric fraction w_ij; each sub-bivariate theta is corrected.
+        if fam == 'gumbel' and marginalDistributions == 'gpd':
             correction = tsEvaExPostCorrOfGumbelTheta(
-                samplingAnalysis, timeStampsByTimeWindow, pairTheta)
+                samplingAnalysis, timeStampsByTimeWindow, rhoTotal)
             CopulaAnalysis['exPostCorrection'] = correction
             # keep the fitted (smoothed) parameters; the active ones become the corrected ones
             copulaParam['rhoBeforeExPostCorrection'] = [np.copy(r) for r in rhoTotal]
-            for k, r in enumerate(rhoTotal):
-                r[0, 1] = r[1, 0] = correction['thetaCorrected'][0, k]
+            for k in range(len(rhoTotal)):
+                rhoTotal[k] = correction['thetaCorrected'][k]
+        # Gaussian + GPD (bivariate or multivariate): per-pair mixture/moment correction,
+        # rho_corr_ij = rho_obs_ij / w_ij with w_ij the symmetric joint fraction; PSD-guarded.
+        elif fam == 'gaussian' and marginalDistributions == 'gpd':
+            correction = tsEvaExPostCorrOfGaussianRho(
+                samplingAnalysis, timeStampsByTimeWindow, rhoTotal)
+            CopulaAnalysis['exPostCorrection'] = correction
+            copulaParam['rhoBeforeExPostCorrection'] = [np.copy(r) for r in rhoTotal]
+            for k in range(len(rhoTotal)):
+                rhoTotal[k] = correction['rhoCorrected'][k]
 
     return CopulaAnalysis
 
 
 def tsEvaExPostCorrOfGumbelTheta(samplingAnalysis, windows, thetaOriginal, maxLagInDays=3):
     """
-    Ex-post correction of the bivariate Gumbel parameter, window by window, to account
-    for marginal exceedances that were not matched in the copula fit.
-    
-    Uses the pre-computed matched/unmatched pairs from samplingAnalysis instead of re-sampling.
-    
-    lambdaU   = 2 - 2^(1/theta)
-    r         = 2*N11 / (2*N11 + N10 + N01)
-    lambdaC   = r * lambdaU
-    thetaC    = log(2) / log(2 - lambdaC)
-    
-    N11: matched exceedances; N10, N01: unmatched exceedances of the 1st and 2nd variable.
+    Ex-post correction of the Gumbel copula parameter, window by window and PAIR by pair,
+    to account for marginal (unpaired) exceedances that dilute the observed dependence.
+
+    Generalizes the original bivariate correction to nSeries variables: each sub-bivariate
+    pair (i, j) gets its own symmetric fraction w_ij and its own corrected theta.
+
+    Per pair (i, j), per window:
+        w_ij     = 2*N11_ij / (2*N11_ij + N10_ij + N01_ij)
+        lambdaU  = 2 - 2^(1/theta_ij)
+        lambdaC  = w_ij * lambdaU
+        thetaC   = log(2) / log(2 - lambdaC)
+
+    thetaOriginal: list of (nSeries, nSeries) theta matrices, one per window
+                   (diagonal = 1, off-diagonals = Gumbel theta for that pair).
+    Returns 'thetaCorrected' with the same list-of-matrices shape.
     """
-    theta = np.asarray(thetaOriginal, dtype=float).reshape(-1)
-    
-    # jointextremes has shape (n_matched, 2, 2) where last dim is [time, value]
+    thetaList = [np.asarray(r, dtype=float) for r in thetaOriginal]
+    nWin = len(thetaList)
+    nSeries = thetaList[0].shape[0]
+
+    N11, N10, N01 = _count_pair_exceedances(samplingAnalysis, windows, nSeries)
+
+    thetaCorrected = []
+    for k in range(nWin):
+        theta_obs = thetaList[k].copy()
+        theta_corr = theta_obs.copy()
+        for i in range(nSeries):
+            for j in range(i + 1, nSeries):
+                denom = 2 * N11[k, i, j] + N10[k, i, j] + N01[k, i, j]
+                if denom > 0:
+                    w = (2 * N11[k, i, j]) / denom
+                    th = theta_obs[i, j]
+                    if np.isfinite(th) and th > 1.0:
+                        lambdaU = 2.0 - 2.0 ** (1.0 / th)
+                        lambdaC = w * lambdaU
+                        if np.isfinite(lambdaC) and (2.0 - lambdaC) > 0 and lambdaC < 2.0:
+                            theta_corr[i, j] = np.log(2.0) / np.log(2.0 - lambdaC)
+                # else: empty window / no joint signal -> keep observed theta
+                theta_corr[j, i] = theta_corr[i, j]
+        thetaCorrected.append(theta_corr)
+
+    return {
+        'thetaOriginal': [np.asarray(r) for r in thetaList],
+        'thetaCorrected': thetaCorrected,
+        'N11': N11, 'N10': N10, 'N01': N01,
+    }
+
+
+def _count_pair_exceedances(samplingAnalysis, windows, nSeries):
+    """
+    Per-window, per-pair exceedance counts shared by the Gumbel and Gaussian ex-post
+    corrections.
+
+    For every sub-bivariate pair (i, j) with i < j, and for every time window, count:
+      N11[i,j]: events where BOTH i and j exceed
+      N10[i,j]: events where only i exceeds
+      N01[i,j]: events where only j exceeds
+
+    An event "exceeds" in variable v if its value is finite in that variable's column.
+    Events are taken from jointextremes (matched / all-exceed) and jointextremes2
+    (non-peak / any-exceed) stacked together, so the per-pair states are exhaustive.
+
+    Returns three (nSeries, nSeries) arrays (upper triangle populated, symmetric),
+    each with shape (nSeries, nSeries) per window stacked along a leading axis:
+      (nWin, nSeries, nSeries) for N11, N10, N01.
+    """
     jointextremes = samplingAnalysis['jointextremes']
     jointextremes2 = samplingAnalysis['jointextremes2']
-    
-    n = len(windows)
-    N11, N10, N01 = np.zeros(n), np.zeros(n), np.zeros(n)
-    
-    # Count matched pairs (N11) and unmatched pairs (N10, N01) per window
-    for k, w in enumerate(windows):
-        # Matched pairs
-        if jointextremes.size > 0:
-            times_matched = jointextremes[:, 0, 0]  # times of first variable (both same in matched)
-            in_window = (times_matched >= w[0]) & (times_matched <= w[-1])
-            N11[k] = np.sum(in_window)
-        
-        # Unmatched pairs (from jointextremes2)
-        if jointextremes2.size > 0:
-            times_unmatched = jointextremes2[:, 0, 0]
-            in_window = (times_unmatched >= w[0]) & (times_unmatched <= w[-1])
-            # jointextremes2 has both unmatched cases mixed; count by checking if each variable is valid
-            unmatched_in_window = jointextremes2[in_window]
-            if len(unmatched_in_window) > 0:
-                # First variable unmatched (second is NaN or empty)
-                N10[k] = np.sum(np.isfinite(unmatched_in_window[:, 0, 1]) & ~np.isfinite(unmatched_in_window[:, 1, 1]))
-                # Second variable unmatched (first is NaN or empty)
-                N01[k] = np.sum(~np.isfinite(unmatched_in_window[:, 0, 1]) & np.isfinite(unmatched_in_window[:, 1, 1]))
 
-    denom = 2 * N11 + N10 + N01
-    rSym = np.divide(2 * N11, denom, out=np.full(n, np.nan), where=denom > 0)
-    lambdaOrig = 2.0 - 2.0 ** (1.0 / theta)
-    lambdaCorr = rSym * lambdaOrig
-    # empty windows (no events) keep the original parameter
-    thetaCorr = np.where(np.isfinite(lambdaCorr), np.log(2.0) / np.log(2.0 - lambdaCorr), theta)
+    nWin = len(windows)
+    N11 = np.zeros((nWin, nSeries, nSeries))
+    N10 = np.zeros((nWin, nSeries, nSeries))
+    N01 = np.zeros((nWin, nSeries, nSeries))
+
+    # Stack matched + non-peak events: each has shape (nEvents, nSeries, 2) [time, value]
+    blocks = [b for b in (jointextremes, jointextremes2) if b.size > 0]
+    if not blocks:
+        return N11, N10, N01
+    allEvents = np.vstack(blocks)                      # (nTotal, nSeries, 2)
+    allTimes = allEvents[:, 0, 0]                      # use var-0 time (identical across vars)
+    exceed = np.isfinite(allEvents[:, :, 1])           # (nTotal, nSeries) boolean
+
+    for k, w in enumerate(windows):
+        in_win = (allTimes >= w[0]) & (allTimes <= w[-1])
+        exc = exceed[in_win]                           # (nInWin, nSeries)
+        if exc.size == 0:
+            continue
+        for i in range(nSeries):
+            for j in range(i + 1, nSeries):
+                both = exc[:, i] & exc[:, j]
+                only_i = exc[:, i] & ~exc[:, j]
+                only_j = exc[:, j] & ~exc[:, i]
+                N11[k, i, j] = N11[k, j, i] = np.sum(both)
+                N10[k, i, j] = np.sum(only_i)          # i exceeds, j not
+                N01[k, i, j] = np.sum(only_j)          # j exceeds, i not
+                N10[k, j, i] = np.sum(only_j)          # symmetric: from j's view, "only i"
+                N01[k, j, i] = np.sum(only_i)
+
+    return N11, N10, N01
+
+
+def _psd_clip_offdiag(rho):
+    """
+    Return a copy of correlation matrix `rho` with off-diagonals scaled down (uniformly)
+    just enough to be positive semi-definite. Diagonal is forced to 1. If the matrix is
+    already PSD, it is returned unchanged (up to diagonal re-normalisation).
+    """
+    rho = np.array(rho, dtype=float)
+    n = rho.shape[0]
+    if n <= 1:
+        return rho
+    out = rho.copy()
+    np.fill_diagonal(out, 1.0)
+
+    def _min_eig(m):
+        return float(np.min(np.linalg.eigvalsh((m + m.T) / 2.0)))
+
+    if _min_eig(out) >= -1e-12:
+        return out
+
+    # Bisection on the off-diagonal scale factor s in [0, 1]: out_s = diag + s*offdiag
+    offdiag = out - np.eye(n)
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        cand = np.eye(n) + mid * offdiag
+        if _min_eig(cand) >= -1e-12:
+            lo = mid
+        else:
+            hi = mid
+    out = np.eye(n) + lo * offdiag
+    np.fill_diagonal(out, 1.0)
+    return out
+
+
+def tsEvaExPostCorrOfGaussianRho(samplingAnalysis, windows, rhoOriginal, maxLagInDays=3):
+    """
+    Ex-post correction of the Gaussian copula correlation matrix, window by window and
+    PAIR by pair, to account for marginal (unpaired) exceedances that dilute the
+    observed correlation.
+
+    Model (mixture / moment), applied independently to each sub-bivariate pair (i, j):
+      the observed any-peak pool is a mixture of
+        - paired (joint) events, fraction w_ij, carrying the TRUE correlation rho_true, and
+        - unpaired (marginal-only) events, fraction (1-w_ij), assumed UNCORRELATED (rho=0).
+      Hence  rho_obs_ij = w_ij * rho_true_ij  =>  rho_corr_ij = rho_obs_ij / w_ij.
+
+    w_ij uses the SYMMETRIC fraction for that pair:
+        w_ij = 2*N11_ij / (2*N11_ij + N10_ij + N01_ij)
+
+    Only off-diagonals are corrected; the diagonal stays 1. A PSD guard clips the
+    corrected off-diagonals back into the positive semi-definite cone (dividing by
+    w < 1 inflates them, which can otherwise break PSD, especially for nSeries > 2).
+
+    rhoOriginal: list of (nSeries, nSeries) correlation matrices, one per window.
+    """
+    rhoList = [np.asarray(r, dtype=float) for r in rhoOriginal]
+    nWin = len(rhoList)
+    nSeries = rhoList[0].shape[0]
+
+    N11, N10, N01 = _count_pair_exceedances(samplingAnalysis, windows, nSeries)
+
+    rhoCorrected = []
+    for k in range(nWin):
+        rho_obs = rhoList[k].copy()
+        rho_corr = rho_obs.copy()
+        for i in range(nSeries):
+            for j in range(i + 1, nSeries):
+                denom = 2 * N11[k, i, j] + N10[k, i, j] + N01[k, i, j]
+                if denom > 0:
+                    w = (2 * N11[k, i, j]) / denom
+                    if w > 0:
+                        val = np.clip(rho_obs[i, j] / w, -1.0, 1.0)
+                        rho_corr[i, j] = val
+                        rho_corr[j, i] = val
+                # else: empty window / no joint signal -> keep observed correlation
+        # restore positive semi-definiteness of the full matrix
+        rhoCorrected.append(_psd_clip_offdiag(rho_corr))
+
     return {
-        'thetaOriginal': theta.reshape(1, -1), 'thetaCorrected': thetaCorr.reshape(1, -1),
-        'lambdaOriginal': lambdaOrig.reshape(1, -1), 'lambdaCorrected': lambdaCorr.reshape(1, -1),
-        'N11': N11.reshape(1, -1), 'N10': N10.reshape(1, -1), 'N01': N01.reshape(1, -1),
-        'rSymmetric': rSym.reshape(1, -1),
+        'rhoOriginal': [np.asarray(r) for r in rhoList],
+        'rhoCorrected': rhoCorrected,
+        'N11': N11, 'N10': N10, 'N01': N01,
     }
 
 
