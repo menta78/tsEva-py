@@ -6,7 +6,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.cm as cm
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, butter, filtfilt
 from scipy.stats import norm, gumbel_r, genpareto
 from scipy.stats import genextreme as gev
 from scipy.optimize import approx_fprime
@@ -550,7 +550,9 @@ def tsEvaNanRunningPercentile(series, windowSize, percent, **kwargs):
             rn_prcnt0[ii] = prob_obj.interpolate()
 
     # 3. Smooth and Return
-    rnprcnt = tsEvaNanRunningMean(rn_prcnt0, windowSize)
+    # Fill NaNs for the filter (interpolate), then apply Butterworth low-pass
+    rn_prcnt_filled = pd.Series(rn_prcnt0).interpolate(limit_direction='both').values
+    rnprcnt = tsEvaButterLowPass(rn_prcnt_filled, windowSize)
     std_error = np.nanstd(rn_prcnt0 - rnprcnt)
     
     return rnprcnt, std_error
@@ -1094,46 +1096,85 @@ def tsRemoveConstantSubseries(srs, stackedValuesCount):
         series[-count:] = np.nan
     return series
 
-def tsEvaNanRunningMean(series, windowSize):
-    minNThreshold = 1
-    rnmn = np.full(len(series), np.nan)  # Initialize output with NaNs
-    dx = int(np.ceil(windowSize / 2))  # Half window size, rounded up
-    l = len(series)
-    sm = 0
-    n = 0
+def tsEvaButterLowPass(series, windowSize, order=2):
+    """Zero-phase Butterworth low-pass filter replacing the running-mean smoother.
 
-    for ii in range(l):
-        minidx = max(ii - dx, 0)  # Adjust for 0-based index
-        maxidx = min(ii + dx, l - 1)  # Adjust for 0-based index
-        
-        if ii == 0:  # For the first element
-            subsrs = series[minidx:maxidx + 1]  # Slicing inclusive
-            sm = np.nansum(subsrs)
-            n = np.sum(~np.isnan(subsrs))
-        else:
-            if minidx > 0:  # If we're not at the start
-                sprev = series[minidx - 1]
-                if not np.isnan(sprev):
-                    sm -= sprev
-                    n -= 1
-            if maxidx < l - 1:  # If we're not at the end
-                snext = series[maxidx + 1]
-                if not np.isnan(snext):
-                    sm += snext
-                    n += 1
-        
-        if n > minNThreshold:
-            rnmn[ii] = sm / n
-        else:
-            rnmn[ii] = np.nan
+    Parameters
+    ----------
+    series : array-like
+        1-D input series (should be NaN-free; call tsEvaFillSeries first).
+    windowSize : float
+        Equivalent running-mean window width in samples.  The Butterworth
+        cutoff is set to 1/windowSize in normalised frequency (cycles/sample),
+        matching the first-null bandwidth of a moving average of the same width.
+    order : int, optional
+        Butterworth filter order (default 2).
 
-    return rnmn
+    Returns
+    -------
+    numpy.ndarray
+        Filtered series, same length as input.
+    """
+    series = np.asarray(series, dtype=float)
+    n = len(series)
+    if n < 4 * order + 2:
+        # Series too short for a meaningful filter — fall back to the mean
+        return np.full(n, np.nanmean(series))
+    nyq = 0.5
+    cutoff = 1.0 / max(windowSize, 2.0)
+    # Keep cutoff strictly below Nyquist
+    cutoff = min(cutoff, 0.99 * nyq)
+    b, a = butter(order, cutoff, btype='low', analog=False)
+    padlen = min(3 * max(len(b), len(a)) - 1, n - 1)
+    return filtfilt(b, a, series, padlen=padlen)
+
+
+def tsEvaRunningCentralMoments(series, windowSize, order=2):
+    """Running 3rd and 4th central moments via Butterworth low-pass smoothing.
+
+    Computes the local central moments around a Butterworth-smoothed running
+    mean, then applies a Butterworth low-pass filter to the moment series
+    themselves.  Replaces the legacy running-statistics call for
+    higher-moment diagnostics.
+
+    Parameters
+    ----------
+    series : array-like
+        1-D input series (should be NaN-free).
+    windowSize : float
+        Equivalent running-mean window width in samples.
+    order : int, optional
+        Butterworth filter order (default 2).
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        ``(mom3, mom4)`` — running 3rd and 4th central moments, each
+        Butterworth-smoothed.
+    """
+    series = np.asarray(series, dtype=float)
+    n = len(series)
+    if n < 4 * order + 2:
+        return np.full(n, np.nan), np.full(n, np.nan)
+
+    # Butterworth-smoothed running mean (zero-phase, no boundary bias)
+    rnmn = tsEvaButterLowPass(series, windowSize, order)
+
+    diff = series - rnmn
+    mom3_raw = diff ** 3
+    mom4_raw = diff ** 4
+
+    # Smooth the moment series with the same Butterworth filter
+    mom3 = tsEvaButterLowPass(mom3_raw, windowSize, order)
+    mom4 = tsEvaButterLowPass(mom4_raw, windowSize, order)
+
+    return mom3, mom4
+
 
 def tsEvaRunningMeanTrend(timeStamps, series, timeWindow):
     filledTimeStamps, filledSeries, dt = tsEvaFillSeries(timeStamps, series)
     nRunMn = np.ceil(timeWindow/dt)
-    trendSeries = tsEvaNanRunningMean(filledSeries, nRunMn)
-    trendSeries = tsEvaNanRunningMean(trendSeries, np.ceil(nRunMn / 2))
+    trendSeries = tsEvaButterLowPass(filledSeries, nRunMn)
     return trendSeries, filledTimeStamps, filledSeries, nRunMn
 
 def tsEvaDetrendTimeSeries(timeStamps, series, timeWindow, **kwargs):
@@ -1146,83 +1187,29 @@ def tsEvaDetrendTimeSeries(timeStamps, series, timeWindow, **kwargs):
     detrendSeries = statSeries - trendSeries
     return detrendSeries, trendSeries, filledTimeStamps, filledSeries, nRunMn
 
-def tsEvaNanRunningStatistics(series, windowSize):
-    minNThreshold = 1
-
-    # Calculate running mean using the separate function
-    rnmn = tsEvaNanRunningMean(series, windowSize)
-    
-    # Initialize output arrays with NaNs
-    rnvar = np.full(len(series), np.nan)
-    rn3mom = np.full(len(series), np.nan)
-    rn4mom = np.full(len(series), np.nan)
-
-    dx = int(np.ceil(windowSize / 2))
-    l = len(series)
-
-    sm = 0
-    smsq = 0 
-    sm3pw = 0
-    sm4pw = 0
-    n = 0    
-
-    for ii in range(l): # Python's 0-based indexing
-        minindx = max(ii - dx, 0)
-        maxindx = min(ii + dx, l - 1)
-
-        if ii == 0:
-            subsrs = series[minindx : maxindx + 1]
-
-            subsrsMean = rnmn[ii] 
-            
-            if not np.isnan(subsrsMean):
-                diffFromMean = subsrs - subsrsMean
-                
-                validDiffs = diffFromMean[~np.isnan(diffFromMean)]
-                smsq = np.sum(validDiffs**2)
-                sm3pw = np.sum(validDiffs**3)
-                sm4pw = np.sum(validDiffs**4)
-                n = len(validDiffs)
-            else:
-                smsq, sm3pw, sm4pw, n = 0, 0, 0, 0
-        else:
-
-            if minindx > 0:
-                sprevVal = series[minindx - 1]
-                sprevMean = rnmn[minindx - 1]
-                
-                if not np.isnan(sprevVal) and not np.isnan(sprevMean):
-                    sprevDiff = sprevVal - sprevMean
-                    smsq = max(0, smsq - sprevDiff**2)
-                    sm3pw = sm3pw - sprevDiff**3
-                    sm4pw = max(0, sm4pw - sprevDiff**4)
-                    n -= 1
-
-            # Element entering the window from the right
-            if maxindx < l - 1:
-                snextVal = series[maxindx + 1]
-                snextMean = rnmn[minindx + 1]
-                
-                if not np.isnan(snextVal) and not np.isnan(snextMean):
-                    snextDiff = snextVal - snextMean
-                    smsq += snextDiff**2
-                    sm3pw += snextDiff**3
-                    sm4pw += snextDiff**4
-                    n += 1
-        
-        # Calculate moments if enough non-NaN elements are present
-        
-        if n > minNThreshold:
-            rnvar[ii] = smsq / n
-            rn3mom[ii] = sm3pw / n
-            rn4mom[ii] = sm4pw / n
-        else:
-            pass
-
-    return rnmn, rnvar, rn3mom, rn4mom
-
 def tsEvaNanRunningVariance(series, windowSize):
+    """Compute the running (local) variance of a series.
 
+    .. deprecated::
+        Use of the running variance as a spread estimator is deprecated in
+        favour of the running upper-tail percentile
+        (``tsEvaNanRunningPercentile``), which is more robust to outliers
+        and heavy tails.  The variance-based transforms ('trend', 'seasonal')
+        are superseded by 'trendCIPercentile' / 'seasonalCIPercentile'.
+        This function is retained for backward compatibility.
+
+    Parameters
+    ----------
+    series : array-like
+        1-D input series.
+    windowSize : int
+        Half-window width in samples.
+
+    Returns
+    -------
+    numpy.ndarray
+        Running variance, same length as input.
+    """
     minNThreshold = 1
 
     rnmn = np.full(len(series), np.nan) # Initialize with NaNs
@@ -1277,12 +1264,10 @@ def tsEvaTransformSeriesToStationaryTrendOnly(timeStamps, series, timeWindow, **
     ) = tsEvaDetrendTimeSeries(timeStamps, series, timeWindow)
     print("computing the slowly varying standard deviation ...")
     varianceSeries = tsEvaNanRunningVariance(statSeries, nRunMn)
-    varianceSeries = tsEvaNanRunningMean(varianceSeries, np.ceil(nRunMn / 2))
+    varianceSeries = tsEvaButterLowPass(varianceSeries, nRunMn)
     stdDevSeries = varianceSeries**0.5
     statSeries = statSeries / stdDevSeries
-    _, _, statSer3Mom, statSer4Mom = tsEvaNanRunningStatistics(statSeries, nRunMn)
-    statSer3Mom = tsEvaNanRunningMean(statSer3Mom, np.ceil(nRunMn))
-    statSer4Mom = tsEvaNanRunningMean(statSer4Mom, np.ceil(nRunMn))
+    statSer3Mom, statSer4Mom = tsEvaRunningCentralMoments(statSeries, nRunMn)
 
     N = nRunMn.copy()
     trendError = np.nanmean(stdDevSeries) / (N ** 0.5)
@@ -1369,7 +1354,7 @@ def tsEvaTransformSeriesToStationaryMultiplicativeSeasonality(timeStamps, series
     print('computing slowly varying standard deviation ...')
     varianceSeries = tsEvaNanRunningVariance(statSeries, nRunMn)
     # further smoothing
-    varianceSeries = tsEvaNanRunningMean(varianceSeries, int(np.ceil(nRunMn/2)))
+    varianceSeries = tsEvaButterLowPass(varianceSeries, nRunMn)
     
     seasonalVarNRun = int(round(nRunMn / timeWindow * seasonalityTimeWindow))
     
@@ -1386,13 +1371,8 @@ def tsEvaTransformSeriesToStationaryMultiplicativeSeasonality(timeStamps, series
     
     statSeries /= (stdDevSeriesNonSeasonal * seasonalStdDevSeries)
     
-    # Placeholder for running statistics
-    # Assuming tsEvaNanRunningStatistics returns three moments
-    # For simplicity, we can set them as NaNs or implement accordingly
-    _, _, statSer3Mom, statSer4Mom = tsEvaNanRunningStatistics(statSeries, nRunMn)
-    statSer3Mom = tsEvaNanRunningMean(statSer3Mom, int(np.ceil(nRunMn)))
-    statSer4Mom = tsEvaNanRunningMean(statSer4Mom, int(np.ceil(nRunMn)))
-    
+    statSer3Mom, statSer4Mom = tsEvaRunningCentralMoments(statSeries, nRunMn)
+
     N = nRunMn
     # Error on the trend
     trendNonSeasonalError = np.nanmean(stdDevSeriesNonSeasonal) / np.sqrt(N)
@@ -1449,20 +1429,30 @@ def tsEvaNonStationary(timeAndSeries, timeWindow, **kwargs):
     -----------------
     Transformation
     ~~~~~~~~~~~~~~
-    transfType : str, default 'trend'
+    transfType : str, default 'trendCIPercentile'
         Stationarity transformation type. One of:
-          'trend'               - long-term trend via running mean; CI via running std dev.
-          'seasonal'            - long-term + seasonal variability (multiplicative).
-          'trendlinear'         - linear trend fit; CI via linear fit of a percentile.
-                                  Requires ciPercentile.
-          'trendCIPercentile'   - running-mean trend; CI via running percentile.
-                                  Requires ciPercentile.
-          'seasonalCIPercentile'- seasonal transformation; CI via running percentile.
-                                  Requires ciPercentile.
-    ciPercentile : float
-        Percentile (0-100) used as the running confidence interval for
-        'trendlinear', 'trendCIPercentile', and 'seasonalCIPercentile'.
-        Mandatory for those transfTypes.
+          'trendCIPercentile'   - [DEFAULT] running-mean trend; spread via
+                                  running upper-tail percentile (robust).
+          'seasonalCIPercentile'- seasonal transformation; spread via running
+                                  upper-tail percentile (robust).
+          'trendlinear'         - linear trend fit; spread via linear fit of
+                                  a percentile.
+          'trend'               - [DEPRECATED] long-term trend via running
+                                  mean; spread via running variance.
+                                  Sensitive to outliers; prefer
+                                  'trendCIPercentile'.
+          'seasonal'            - [DEPRECATED] long-term + seasonal
+                                  variability (multiplicative); spread via
+                                  running variance. Prefer
+                                  'seasonalCIPercentile'.
+    ciPercentile : float, default 99.0
+        Upper-tail percentile (0-100) used to estimate the slowly-varying
+        spread (std dev) of the detrended series via a running percentile,
+        as a robust alternative to the running variance.
+        Despite the "CI" name, this is not a statistical confidence interval;
+        it is a quantile level that traces the upper envelope of fluctuations.
+        Used by 'trendlinear', 'trendCIPercentile', and
+        'seasonalCIPercentile'.
 
     POT sampling
     ~~~~~~~~~~~~
@@ -1491,9 +1481,9 @@ def tsEvaNonStationary(timeAndSeries, timeWindow, **kwargs):
         fit_genpareto, fit_genpareto_neg_shape). Forwarded to tsEVstatistics.
     """
 
-    transfType = kwargs.get('transfType', 'trend')
+    transfType = kwargs.get('transfType', 'trendCIPercentile')
     minPeakDistanceInDays = kwargs.get('minPeakDistanceInDays', -1)
-    ciPercentile = kwargs.get('ciPercentile', np.nan)
+    ciPercentile = kwargs.get('ciPercentile', 99.0)
     potEventsPerYear = kwargs.get('potEventsPerYear', 5)
     evdType = kwargs.get('evdType', ['GEV', 'GPD'])
     gevType = kwargs.get('gevType', 'GEV')  # can be 'GEV' or 'Gumbel'
@@ -1538,7 +1528,7 @@ def tsEvaNonStationary(timeAndSeries, timeWindow, **kwargs):
     elif (transfType == "trendCIPercentile"):
         if np.isnan(ciPercentile):
             print("For trendCIPercentile transformation the label parameter 'cipercentile' is mandatory:")
-        print("evaluating long term variations of extremes using the th percentile")
+        print(f"evaluating long term variations of extremes using the {ciPercentile:.1f}th percentile")
         trasfData = tsEvaTransformSeriesToStationaryTrendOnly_ciPercentile(timeStamps, series, timeWindow, ciPercentile, **kwargs)
         gevMaxima = "annual"
         potEventsPerYear = 5
@@ -2341,11 +2331,8 @@ def tsEvaTransformSeriesToStationaryTrendLinear(timeStamps, series, timeWindow, 
     stdErr = np.sqrt(ErrorPercentile**2 + trendErrorSeries**2)
     
     # Assess third and fourth moment statistics
-    # Assuming tsEvaNanRunningStatistics & tsEvaNanRunningMean are defined
-    _, _, statSer3Mom, statSer4Mom = tsEvaNanRunningStatistics(statSeries, nRunMn)
-    statSer3Mom = tsEvaNanRunningMean(statSer3Mom, int(np.ceil(nRunMn)))
-    statSer4Mom = tsEvaNanRunningMean(statSer4Mom, int(np.ceil(nRunMn)))
-    
+    statSer3Mom, statSer4Mom = tsEvaRunningCentralMoments(statSeries, nRunMn)
+
     # Prepare the output object
     class TrasfData:
         pass
@@ -2454,11 +2441,9 @@ def tsEvaTransformSeriesToStatSeasonal_ciPercentile(timeStamps, series, timeWind
         stdDevSeriesNonSeasonal = np.sqrt(percentileSeries)
         
     statSeries = statSeries / (stdDevSeriesNonSeasonal * seasonalStdDevSeries)
-    
-    _, _, statSer3Mom, statSer4Mom = tsEvaNanRunningStatistics(statSeries, nRunMn)
-    statSer3Mom = tsEvaNanRunningMean(statSer3Mom, int(np.ceil(nRunMn)))
-    statSer4Mom = tsEvaNanRunningMean(statSer4Mom, int(np.ceil(nRunMn)))
-    
+
+    statSer3Mom, statSer4Mom = tsEvaRunningCentralMoments(statSeries, nRunMn)
+
     N = nRunMn
     trendNonSeasonalError = np.nanmean(stdDevSeriesNonSeasonal) / np.sqrt(N)
     
@@ -2523,11 +2508,9 @@ def tsEvaTransformSeriesToStationaryTrendOnly_ciPercentile(timeStamps, series, t
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         statSeries = statSeries / stdDevSeries
-        
-    _, _, statSer3Mom, statSer4Mom = tsEvaNanRunningStatistics(statSeries, nRunMn)
-    statSer3Mom = tsEvaNanRunningMean(statSer3Mom, int(np.ceil(nRunMn)))
-    statSer4Mom = tsEvaNanRunningMean(statSer4Mom, int(np.ceil(nRunMn)))
-    
+
+    statSer3Mom, statSer4Mom = tsEvaRunningCentralMoments(statSeries, nRunMn)
+
     # N is the size of each sample used to compute the average
     N = nRunMn
     

@@ -32,7 +32,7 @@ extremesRange = [0.2, 1.2]
 seasonalExtrRange = [0.1, 1.1]
 seriesDescr = 'Hebrides'
 
-timeWindow = 365.25 * 6  # 6 years
+timeWindow = 365.25 * 10  # 10 years
 minPeakDistanceInDays = 3
 
 minTS = np.min(timeAndSeries[:, 0])

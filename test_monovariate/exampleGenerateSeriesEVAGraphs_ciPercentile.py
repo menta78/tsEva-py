@@ -42,7 +42,7 @@ rlRange = [0.6, 1.1]
 seasonalExtrRange = [0.1, 1.1]
 seriesDescr = 'Hebrides'
 
-timeWindow = 365.25 * 6  # 6 years
+timeWindow = 365.25 * 10  # 10 years
 minPeakDistanceInDays = 3
 ciPercentile = 98
 
