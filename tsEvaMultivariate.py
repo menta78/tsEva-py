@@ -492,7 +492,76 @@ def tsCopulaExtremes(inputtimestamps, inputtimeseries, **kwargs):
             gpdCdf[gpdCdf == 0] = 1e-7
             gpdCDFCopula[:, ii] = gpdCdf
 
+    if kwargs.get('exPostCorrection', True):
+        # Only apply correction to bivariate Gumbel + GPD; for other cases, silently skip
+        if nSeries == 2 and str(copulaFamily).lower() == 'gumbel' and marginalDistributions == 'gpd':
+            pairTheta = np.array([[r[0, 1] for r in rhoTotal]])
+            correction = tsEvaExPostCorrOfGumbelTheta(
+                samplingAnalysis, timeStampsByTimeWindow, pairTheta)
+            CopulaAnalysis['exPostCorrection'] = correction
+            # keep the fitted (smoothed) parameters; the active ones become the corrected ones
+            copulaParam['rhoBeforeExPostCorrection'] = [np.copy(r) for r in rhoTotal]
+            for k, r in enumerate(rhoTotal):
+                r[0, 1] = r[1, 0] = correction['thetaCorrected'][0, k]
+
     return CopulaAnalysis
+
+
+def tsEvaExPostCorrOfGumbelTheta(samplingAnalysis, windows, thetaOriginal, maxLagInDays=3):
+    """
+    Ex-post correction of the bivariate Gumbel parameter, window by window, to account
+    for marginal exceedances that were not matched in the copula fit.
+    
+    Uses the pre-computed matched/unmatched pairs from samplingAnalysis instead of re-sampling.
+    
+    lambdaU   = 2 - 2^(1/theta)
+    r         = 2*N11 / (2*N11 + N10 + N01)
+    lambdaC   = r * lambdaU
+    thetaC    = log(2) / log(2 - lambdaC)
+    
+    N11: matched exceedances; N10, N01: unmatched exceedances of the 1st and 2nd variable.
+    """
+    theta = np.asarray(thetaOriginal, dtype=float).reshape(-1)
+    
+    # jointextremes has shape (n_matched, 2, 2) where last dim is [time, value]
+    jointextremes = samplingAnalysis['jointextremes']
+    jointextremes2 = samplingAnalysis['jointextremes2']
+    
+    n = len(windows)
+    N11, N10, N01 = np.zeros(n), np.zeros(n), np.zeros(n)
+    
+    # Count matched pairs (N11) and unmatched pairs (N10, N01) per window
+    for k, w in enumerate(windows):
+        # Matched pairs
+        if jointextremes.size > 0:
+            times_matched = jointextremes[:, 0, 0]  # times of first variable (both same in matched)
+            in_window = (times_matched >= w[0]) & (times_matched <= w[-1])
+            N11[k] = np.sum(in_window)
+        
+        # Unmatched pairs (from jointextremes2)
+        if jointextremes2.size > 0:
+            times_unmatched = jointextremes2[:, 0, 0]
+            in_window = (times_unmatched >= w[0]) & (times_unmatched <= w[-1])
+            # jointextremes2 has both unmatched cases mixed; count by checking if each variable is valid
+            unmatched_in_window = jointextremes2[in_window]
+            if len(unmatched_in_window) > 0:
+                # First variable unmatched (second is NaN or empty)
+                N10[k] = np.sum(np.isfinite(unmatched_in_window[:, 0, 1]) & ~np.isfinite(unmatched_in_window[:, 1, 1]))
+                # Second variable unmatched (first is NaN or empty)
+                N01[k] = np.sum(~np.isfinite(unmatched_in_window[:, 0, 1]) & np.isfinite(unmatched_in_window[:, 1, 1]))
+
+    denom = 2 * N11 + N10 + N01
+    rSym = np.divide(2 * N11, denom, out=np.full(n, np.nan), where=denom > 0)
+    lambdaOrig = 2.0 - 2.0 ** (1.0 / theta)
+    lambdaCorr = rSym * lambdaOrig
+    # empty windows (no events) keep the original parameter
+    thetaCorr = np.where(np.isfinite(lambdaCorr), np.log(2.0) / np.log(2.0 - lambdaCorr), theta)
+    return {
+        'thetaOriginal': theta.reshape(1, -1), 'thetaCorrected': thetaCorr.reshape(1, -1),
+        'lambdaOriginal': lambdaOrig.reshape(1, -1), 'lambdaCorrected': lambdaCorr.reshape(1, -1),
+        'N11': N11.reshape(1, -1), 'N10': N10.reshape(1, -1), 'N01': N01.reshape(1, -1),
+        'rSymmetric': rSym.reshape(1, -1),
+    }
 
 
 def tsCopulaSampleJointPeaksMultiVariatePruning(inputtimestamps, inputtimeseries, **kwargs):
